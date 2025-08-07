@@ -3,12 +3,15 @@ import Joi from 'joi';
 
 export const validate = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
+    console.log('Validando dados:', req.body);
     const { error } = schema.validate(req.body);
     if (error) {
+      console.error('Erro de validação:', error.details);
       res.status(400).json({
         success: false,
         message: 'Dados inválidos',
-        errors: error.details.map(detail => detail.message)
+        errors: error.details.map(detail => detail.message),
+        details: error.details
       });
       return;
     }
@@ -90,13 +93,17 @@ export const reservationSchema = Joi.object({
   customer_name: Joi.string().required().min(2).max(100),
   phone: Joi.string().optional().max(20),
   number_of_people: Joi.number().integer().min(1).required(),
-  reservation_date: Joi.date().iso().required(),
+  reservation_date: Joi.string().required(),
   start_time: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).required(),
   table_id: Joi.string().uuid().optional(),
   area_id: Joi.string().uuid().optional(),
   status: Joi.string().valid('pending', 'confirmed', 'canceled', 'completed', 'seated').default('pending'),
-  notes: Joi.string().optional().max(500)
-});
+  notes: Joi.string().optional().allow('').max(500),
+  // Campos opcionais que podem vir do frontend
+  reservation_experience_id: Joi.string().optional(),
+  reservation_experience_data: Joi.object().optional(),
+  restaurant_id: Joi.string().uuid().optional()
+}).unknown(true); // Permite campos adicionais
 
 export const waitingListSchema = Joi.object({
   customer_name: Joi.string().required().min(2).max(100),

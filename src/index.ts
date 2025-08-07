@@ -20,6 +20,7 @@ import experienceRoutes from './routes/experienceRoutes';
 import customerRoutes from './routes/customerRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import chatRoutes from './routes/chatRoutes';
+import whatsappRoutes from './routes/whatsappRoutes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -337,6 +338,7 @@ app.use('/api/experience', experienceRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // 404 handler
 app.use(notFound);

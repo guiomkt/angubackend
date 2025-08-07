@@ -74,14 +74,56 @@ export class ReservationController {
         throw createError('Restaurant access required', 403);
       }
 
+      console.log('Dados recebidos:', JSON.stringify(req.body, null, 2));
+      console.log('Restaurant ID:', req.user.restaurant_id);
+      console.log('Headers:', req.headers);
+
+      // Validação adicional de data e horário
+      const { reservation_date, start_time } = req.body;
+      if (reservation_date) {
+        // Usar data local para evitar problemas de timezone
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        // Criar data da reserva no timezone local
+        const [year, month, day] = reservation_date.split('-').map(Number);
+        const reservationDate = new Date(year, month - 1, day); // month - 1 porque getMonth() retorna 0-11
+        
+        console.log('Data de hoje (local):', today.toISOString());
+        console.log('Data da reserva (local):', reservationDate.toISOString());
+        console.log('Comparação:', reservationDate.getTime(), '<', today.getTime());
+        
+        if (reservationDate < today) {
+          throw createError('Não é possível fazer reservas para datas passadas', 400);
+        }
+        
+        const isToday = reservationDate.getTime() === today.getTime();
+        
+        if (isToday && start_time) {
+          const [hour, minute] = start_time.split(':').map(Number);
+          const currentHour = now.getHours();
+          const currentMinute = now.getMinutes();
+          
+          console.log('Horário da reserva:', hour + ':' + minute);
+          console.log('Horário atual:', currentHour + ':' + currentMinute);
+          
+          if (hour < currentHour || (hour === currentHour && minute <= currentMinute)) {
+            throw createError('Não é possível fazer reservas para horários passados', 400);
+          }
+        }
+      }
+
       const reservationData = {
         ...req.body,
         restaurant_id: req.user.restaurant_id
       };
 
+      console.log('Dados processados:', reservationData);
+
       const result = await reservationService.createReservation(reservationData);
       res.status(201).json(result);
     } catch (error) {
+      console.error('Erro ao criar reserva:', error);
       next(error);
     }
   }

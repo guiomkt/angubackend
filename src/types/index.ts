@@ -94,7 +94,6 @@ export interface Reservation extends BaseEntity {
   number_of_people: number;
   reservation_date: string;
   start_time: string;
-  end_time: string;
   table_id: string;
   area_id: string;
   status: 'pending' | 'confirmed' | 'canceled' | 'completed';

@@ -8,32 +8,107 @@ const router = Router();
  * @swagger
  * components:
  *   schemas:
- *     WaitingList:
+ *     WaitingListEntry:
+ *       type: object
+ *       required:
+ *         - restaurant_id
+ *         - customer_name
+ *         - phone_number
+ *         - party_size
+ *         - queue_number
+ *         - status
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         restaurant_id:
+ *           type: string
+ *           format: uuid
+ *         customer_name:
+ *           type: string
+ *         phone_number:
+ *           type: string
+ *         party_size:
+ *           type: number
+ *           minimum: 1
+ *         queue_number:
+ *           type: number
+ *         status:
+ *           type: string
+ *           enum: [waiting, notified, seated, no_show, completed]
+ *         priority:
+ *           type: string
+ *           enum: [low, medium, high]
+ *           default: low
+ *         area_preference:
+ *           type: string
+ *           format: uuid
+ *         estimated_wait_time:
+ *           type: number
+ *         notification_time:
+ *           type: string
+ *           format: date-time
+ *         notes:
+ *           type: string
+ *         table_id:
+ *           type: string
+ *           format: uuid
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *     WaitingListConfig:
  *       type: object
  *       properties:
- *         id: { type: string, format: uuid }
- *         restaurant_id: { type: string, format: uuid }
- *         customer_name: { type: string }
- *         phone_number: { type: string }
- *         party_size: { type: number }
- *         queue_number: { type: number }
- *         status: { type: string, enum: [waiting, notified, seated, no_show] }
- *         priority: { type: string, enum: [low, medium, high] }
- *         area_preference: { type: string, format: uuid }
- *         estimated_wait_time: { type: number }
- *         notification_time: { type: string, format: date-time }
- *         notes: { type: string }
- *         table_id: { type: string, format: uuid }
- *         created_at: { type: string, format: date-time }
- *         updated_at: { type: string, format: date-time }
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         restaurant_id:
+ *           type: string
+ *           format: uuid
+ *         auto_notification:
+ *           type: boolean
+ *           default: true
+ *         notification_message:
+ *           type: string
+ *         default_wait_time:
+ *           type: number
+ *           default: 15
+ *         max_party_size:
+ *           type: number
+ *           default: 20
+ *         enable_customer_form:
+ *           type: boolean
+ *           default: true
+ *         customer_form_url:
+ *           type: string
+ *         priority_enabled:
+ *           type: boolean
+ *           default: true
+ *         collect_phone:
+ *           type: boolean
+ *           default: true
+ *         collect_email:
+ *           type: boolean
+ *           default: false
+ *         confirmation_message:
+ *           type: string
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
  */
 
 /**
  * @swagger
  * /api/waiting-lists:
  *   get:
- *     summary: Get waiting list entries
- *     tags: [Waiting Lists]
+ *     summary: Get all waiting list entries for current restaurant
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -41,7 +116,7 @@ const router = Router();
  *         name: status
  *         schema:
  *           type: string
- *           enum: [waiting, notified, seated, no_show]
+ *           enum: [waiting, notified, seated, no_show, completed]
  *         description: Filter by status
  *       - in: query
  *         name: priority
@@ -49,20 +124,57 @@ const router = Router();
  *           type: string
  *           enum: [low, medium, high]
  *         description: Filter by priority
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of items per page
  *     responses:
  *       200:
  *         description: List of waiting list entries
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/WaitingListEntry'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const { status, priority } = req.query;
     const restaurantId = req.user?.restaurant_id;
+    const { status, priority, page = 1, limit = 20 } = req.query;
 
     let query = supabase
       .from('waiting_list')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact' })
+      .eq('restaurant_id', restaurantId);
 
     if (status) {
       query = query.eq('status', status);
@@ -72,18 +184,27 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
       query = query.eq('priority', priority);
     }
 
-    const { data, error } = await query;
+    const offset = (Number(page) - 1) * Number(limit);
+    const { data, error, count } = await query
+      .range(offset, offset + Number(limit) - 1)
+      .order('created_at', { ascending: false });
 
     if (error) {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
-        error: error.message
+        error: 'Failed to fetch waiting list'
       });
     }
 
     res.json({
       success: true,
-      data: data || []
+      data: data || [],
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / Number(limit))
+      }
     });
   } catch (error) {
     res.status(500).json({
@@ -97,8 +218,8 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
  * @swagger
  * /api/waiting-lists/{id}:
  *   get:
- *     summary: Get waiting list entry by ID
- *     tags: [Waiting Lists]
+ *     summary: Get a specific waiting list entry
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -112,11 +233,26 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
  *     responses:
  *       200:
  *         description: Waiting list entry details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/WaitingListEntry'
+ *       404:
+ *         description: Entry not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
 
     const { data, error } = await supabase
       .from('waiting_list')
@@ -125,10 +261,10 @@ router.get('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
       .eq('restaurant_id', restaurantId)
       .single();
 
-    if (error) {
+    if (error || !data) {
       return res.status(404).json({
         success: false,
-        error: 'Waiting list entry not found'
+        error: 'Entry not found'
       });
     }
 
@@ -148,8 +284,8 @@ router.get('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  * @swagger
  * /api/waiting-lists:
  *   post:
- *     summary: Add customer to waiting list
- *     tags: [Waiting Lists]
+ *     summary: Add a new customer to the waiting list
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -163,55 +299,88 @@ router.get('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  *               - phone_number
  *               - party_size
  *             properties:
- *               customer_name: { type: string }
- *               phone_number: { type: string }
- *               party_size: { type: number, minimum: 1 }
- *               priority: { type: string, enum: [low, medium, high], default: low }
- *               area_preference: { type: string, format: uuid }
- *               estimated_wait_time: { type: number }
- *               notes: { type: string }
+ *               customer_name:
+ *                 type: string
+ *                 description: Customer name
+ *               phone_number:
+ *                 type: string
+ *                 description: Customer phone number
+ *               party_size:
+ *                 type: number
+ *                 minimum: 1
+ *                 description: Number of people in the party
+ *               priority:
+ *                 type: string
+ *                 enum: [low, medium, high]
+ *                 default: low
+ *                 description: Priority level
+ *               area_preference:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Preferred area ID
+ *               estimated_wait_time:
+ *                 type: number
+ *                 description: Estimated wait time in minutes
+ *               notes:
+ *                 type: string
+ *                 description: Additional notes
  *     responses:
  *       201:
- *         description: Customer added to waiting list
+ *         description: Customer added to waiting list successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/WaitingListEntry'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.post('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
-    const { customer_name, phone_number, party_size, priority = 'low', area_preference, estimated_wait_time, notes } = req.body;
+    const {
+      customer_name,
+      phone_number,
+      party_size,
+      priority = 'low',
+      area_preference,
+      estimated_wait_time,
+      notes
+    } = req.body;
 
-    if (!customer_name || !phone_number || !party_size) {
-      return res.status(400).json({
-        success: false,
-        error: 'Customer name, phone number, and party size are required'
-      });
-    }
-
-    // Get next queue number
-    const { data: lastEntry } = await supabase
+    // Get the next queue number
+    const { data: lastEntry, error: countError } = await supabase
       .from('waiting_list')
       .select('queue_number')
       .eq('restaurant_id', restaurantId)
       .order('queue_number', { ascending: false })
-      .limit(1);
+      .limit(1)
+      .single();
 
-    const nextQueueNumber = (lastEntry?.[0]?.queue_number || 0) + 1;
-
-    const entryData = {
-      restaurant_id: restaurantId,
-      customer_name,
-      phone_number,
-      party_size,
-      queue_number: nextQueueNumber,
-      status: 'waiting',
-      priority,
-      area_preference,
-      estimated_wait_time,
-      notes
-    };
+    const queueNumber = lastEntry ? lastEntry.queue_number + 1 : 1;
 
     const { data, error } = await supabase
       .from('waiting_list')
-      .insert(entryData)
+      .insert([{
+        restaurant_id: restaurantId,
+        customer_name,
+        phone_number,
+        party_size,
+        queue_number: queueNumber,
+        status: 'waiting',
+        priority,
+        area_preference,
+        estimated_wait_time,
+        notes
+      }])
       .select()
       .single();
 
@@ -238,8 +407,8 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
  * @swagger
  * /api/waiting-lists/{id}:
  *   put:
- *     summary: Update waiting list entry
- *     tags: [Waiting Lists]
+ *     summary: Update a waiting list entry
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -257,35 +426,65 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
  *           schema:
  *             type: object
  *             properties:
- *               customer_name: { type: string }
- *               phone_number: { type: string }
- *               party_size: { type: number }
- *               priority: { type: string, enum: [low, medium, high] }
- *               area_preference: { type: string, format: uuid }
- *               estimated_wait_time: { type: number }
- *               notes: { type: string }
+ *               customer_name:
+ *                 type: string
+ *               phone_number:
+ *                 type: string
+ *               party_size:
+ *                 type: number
+ *                 minimum: 1
+ *               priority:
+ *                 type: string
+ *                 enum: [low, medium, high]
+ *               area_preference:
+ *                 type: string
+ *                 format: uuid
+ *               estimated_wait_time:
+ *                 type: number
+ *               notes:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Waiting list entry updated
+ *         description: Entry updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/WaitingListEntry'
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Entry not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.put('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
     const updateData = req.body;
 
     const { data, error } = await supabase
       .from('waiting_list')
-      .update(updateData)
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id)
       .eq('restaurant_id', restaurantId)
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({
+    if (error || !data) {
+      return res.status(404).json({
         success: false,
-        error: error.message
+        error: 'Entry not found'
       });
     }
 
@@ -305,8 +504,8 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  * @swagger
  * /api/waiting-lists/{id}/status:
  *   patch:
- *     summary: Update waiting list entry status
- *     tags: [Waiting Lists]
+ *     summary: Update the status of a waiting list entry
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -326,29 +525,49 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  *             required:
  *               - status
  *             properties:
- *               status: { type: string, enum: [waiting, notified, seated, no_show] }
- *               table_id: { type: string, format: uuid }
- *               notes: { type: string }
+ *               status:
+ *                 type: string
+ *                 enum: [waiting, notified, seated, no_show, completed]
+ *                 description: New status for the entry
+ *               table_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Table ID when seating the customer
  *     responses:
  *       200:
  *         description: Status updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/WaitingListEntry'
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Entry not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
-    const { status, table_id, notes } = req.body;
+    const restaurantId = req.user?.restaurant_id;
+    const { status, table_id } = req.body;
 
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        error: 'Status is required'
-      });
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString()
+    };
+
+    if (status === 'seated' && table_id) {
+      updateData.table_id = table_id;
     }
-
-    const updateData: any = { status };
-    if (table_id) updateData.table_id = table_id;
-    if (notes) updateData.notes = notes;
 
     if (status === 'notified') {
       updateData.notification_time = new Date().toISOString();
@@ -362,10 +581,10 @@ router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: Au
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({
+    if (error || !data) {
+      return res.status(404).json({
         success: false,
-        error: error.message
+        error: 'Entry not found'
       });
     }
 
@@ -385,8 +604,8 @@ router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: Au
  * @swagger
  * /api/waiting-lists/{id}:
  *   delete:
- *     summary: Remove customer from waiting list
- *     tags: [Waiting Lists]
+ *     summary: Remove a customer from the waiting list
+ *     tags: [Waiting List]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -399,12 +618,27 @@ router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: Au
  *         description: Waiting list entry ID
  *     responses:
  *       200:
- *         description: Customer removed from waiting list
+ *         description: Customer removed from waiting list successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Entry not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.delete('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
 
     const { error } = await supabase
       .from('waiting_list')
@@ -421,7 +655,7 @@ router.delete('/:id', authenticateToken, requireRestaurant, async (req: Authenti
 
     res.json({
       success: true,
-      message: 'Customer removed from waiting list'
+      message: 'Customer removed from waiting list successfully'
     });
   } catch (error) {
     res.status(500).json({

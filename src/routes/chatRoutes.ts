@@ -11,38 +11,112 @@ const router = Router();
  *     ChatContact:
  *       type: object
  *       properties:
- *         id: { type: string, format: uuid }
- *         restaurant_id: { type: string, format: uuid }
- *         phone_number: { type: string }
- *         name: { type: string }
- *         profile_image_url: { type: string }
- *         status: { type: string, enum: [new, active, inactive] }
- *         customer_type: { type: string, enum: [new, returning, vip] }
- *         last_message_at: { type: string, format: date-time }
- *         unread_count: { type: number }
- *         tags: { type: array, items: { type: string } }
- *         notes: { type: string }
- *         created_at: { type: string, format: date-time }
- *         updated_at: { type: string, format: date-time }
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         restaurant_id:
+ *           type: string
+ *           format: uuid
+ *         phone_number:
+ *           type: string
+ *         name:
+ *           type: string
+ *         profile_image_url:
+ *           type: string
+ *         status:
+ *           type: string
+ *           enum: [new, active, inactive]
+ *         customer_type:
+ *           type: string
+ *           enum: [new, returning, vip]
+ *         last_message_at:
+ *           type: string
+ *           format: date-time
+ *         unread_count:
+ *           type: number
+ *         tags:
+ *           type: array
+ *           items:
+ *             type: string
+ *         notes:
+ *           type: string
+ *         thread_id:
+ *           type: string
+ *         ai_enable:
+ *           type: boolean
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
  *     ChatMessage:
  *       type: object
  *       properties:
- *         id: { type: string, format: uuid }
- *         sender_type: { type: string, enum: [customer, restaurant, ai] }
- *         sender_id: { type: string }
- *         content: { type: string }
- *         content_type: { type: string, enum: [text, image, file, location, contact] }
- *         media_url: { type: string }
- *         is_read: { type: boolean }
- *         created_at: { type: string, format: date-time }
- *         updated_at: { type: string, format: date-time }
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         sender_type:
+ *           type: string
+ *           enum: [customer, agent, ai]
+ *         sender_id:
+ *           type: string
+ *           format: uuid
+ *         content:
+ *           type: string
+ *         content_type:
+ *           type: string
+ *           enum: [text, image, audio, video, document]
+ *         media_url:
+ *           type: string
+ *         is_read:
+ *           type: boolean
+ *         restaurant_id:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [sent, delivered, read, failed]
+ *         intent:
+ *           type: string
+ *         sentiment:
+ *           type: string
+ *           enum: [positive, neutral, negative]
+ *         ai_enabled:
+ *           type: boolean
+ *         assigned_to:
+ *           type: string
+ *           format: uuid
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *     ChatAnalytics:
+ *       type: object
+ *       properties:
+ *         total_conversations:
+ *           type: number
+ *         new_conversations:
+ *           type: number
+ *         ai_handled_conversations:
+ *           type: number
+ *         human_handled_conversations:
+ *           type: number
+ *         avg_response_time:
+ *           type: number
+ *         avg_resolution_time:
+ *           type: number
+ *         popular_topics:
+ *           type: object
  */
 
 /**
  * @swagger
  * /api/chat/contacts:
  *   get:
- *     summary: Get chat contacts
+ *     summary: Get all chat contacts for current restaurant
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -54,10 +128,11 @@ const router = Router();
  *           enum: [new, active, inactive]
  *         description: Filter by contact status
  *       - in: query
- *         name: search
+ *         name: customer_type
  *         schema:
  *           type: string
- *         description: Search by name or phone number
+ *           enum: [new, returning, vip]
+ *         description: Filter by customer type
  *       - in: query
  *         name: page
  *         schema:
@@ -73,35 +148,60 @@ const router = Router();
  *     responses:
  *       200:
  *         description: List of chat contacts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ChatContact'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/contacts', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
-    const { status, search, page = 1, limit = 20 } = req.query;
+    const { status, customer_type, page = 1, limit = 20 } = req.query;
 
     let query = supabase
       .from('chat_contacts')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .order('last_message_at', { ascending: false });
+      .select('*', { count: 'exact' })
+      .eq('restaurant_id', restaurantId);
 
     if (status) {
       query = query.eq('status', status);
     }
 
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,phone_number.ilike.%${search}%`);
+    if (customer_type) {
+      query = query.eq('customer_type', customer_type);
     }
 
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
-    query = query.range(offset, offset + parseInt(limit as string) - 1);
-
-    const { data, error, count } = await query;
+    const offset = (Number(page) - 1) * Number(limit);
+    const { data, error, count } = await query
+      .range(offset, offset + Number(limit) - 1)
+      .order('last_message_at', { ascending: false });
 
     if (error) {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
-        error: error.message
+        error: 'Failed to fetch contacts'
       });
     }
 
@@ -109,10 +209,10 @@ router.get('/contacts', authenticateToken, requireRestaurant, async (req: Authen
       success: true,
       data: data || [],
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: Number(page),
+        limit: Number(limit),
         total: count || 0,
-        totalPages: Math.ceil((count || 0) / parseInt(limit as string))
+        totalPages: Math.ceil((count || 0) / Number(limit))
       }
     });
   } catch (error) {
@@ -127,7 +227,7 @@ router.get('/contacts', authenticateToken, requireRestaurant, async (req: Authen
  * @swagger
  * /api/chat/contacts/{id}:
  *   get:
- *     summary: Get chat contact by ID
+ *     summary: Get a specific chat contact
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -142,11 +242,26 @@ router.get('/contacts', authenticateToken, requireRestaurant, async (req: Authen
  *     responses:
  *       200:
  *         description: Chat contact details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ChatContact'
+ *       404:
+ *         description: Contact not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
 
     const { data, error } = await supabase
       .from('chat_contacts')
@@ -155,7 +270,7 @@ router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
       .eq('restaurant_id', restaurantId)
       .single();
 
-    if (error) {
+    if (error || !data) {
       return res.status(404).json({
         success: false,
         error: 'Contact not found'
@@ -178,7 +293,7 @@ router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  * @swagger
  * /api/chat/contacts/{id}:
  *   put:
- *     summary: Update chat contact
+ *     summary: Update a chat contact
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -197,33 +312,64 @@ router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  *           schema:
  *             type: object
  *             properties:
- *               name: { type: string }
- *               status: { type: string, enum: [new, active, inactive] }
- *               customer_type: { type: string, enum: [new, returning, vip] }
- *               tags: { type: array, items: { type: string } }
- *               notes: { type: string }
+ *               name:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *                 enum: [new, active, inactive]
+ *               customer_type:
+ *                 type: string
+ *                 enum: [new, returning, vip]
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               notes:
+ *                 type: string
+ *               ai_enable:
+ *                 type: boolean
  *     responses:
  *       200:
  *         description: Contact updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ChatContact'
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Contact not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
     const updateData = req.body;
 
     const { data, error } = await supabase
       .from('chat_contacts')
-      .update(updateData)
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id)
       .eq('restaurant_id', restaurantId)
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({
+    if (error || !data) {
+      return res.status(404).json({
         success: false,
-        error: error.message
+        error: 'Contact not found'
       });
     }
 
@@ -243,7 +389,7 @@ router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  * @swagger
  * /api/chat/contacts/{id}/messages:
  *   get:
- *     summary: Get messages for a contact
+ *     summary: Get messages for a specific contact
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -270,27 +416,69 @@ router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  *     responses:
  *       200:
  *         description: List of messages
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/ChatMessage'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       404:
+ *         description: Contact not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
     const { page = 1, limit = 50 } = req.query;
 
-    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+    // First verify the contact exists
+    const { data: contact, error: contactError } = await supabase
+      .from('chat_contacts')
+      .select('id')
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId)
+      .single();
 
+    if (contactError || !contact) {
+      return res.status(404).json({
+        success: false,
+        error: 'Contact not found'
+      });
+    }
+
+    const offset = (Number(page) - 1) * Number(limit);
     const { data, error, count } = await supabase
       .from('chat_messages')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('restaurant_id', restaurantId)
-      .eq('contact_id', id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + parseInt(limit as string) - 1);
+      .eq('sender_id', id)
+      .range(offset, offset + Number(limit) - 1)
+      .order('created_at', { ascending: false });
 
     if (error) {
-      return res.status(400).json({
+      return res.status(500).json({
         success: false,
-        error: error.message
+        error: 'Failed to fetch messages'
       });
     }
 
@@ -298,10 +486,10 @@ router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async
       success: true,
       data: data || [],
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: Number(page),
+        limit: Number(limit),
         total: count || 0,
-        totalPages: Math.ceil((count || 0) / parseInt(limit as string))
+        totalPages: Math.ceil((count || 0) / Number(limit))
       }
     });
   } catch (error) {
@@ -337,40 +525,69 @@ router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async
  *             required:
  *               - content
  *             properties:
- *               content: { type: string }
- *               content_type: { type: string, enum: [text, image, file, location, contact], default: text }
- *               media_url: { type: string }
+ *               content:
+ *                 type: string
+ *                 description: Message content
+ *               content_type:
+ *                 type: string
+ *                 enum: [text, image, audio, video, document]
+ *                 default: text
+ *               media_url:
+ *                 type: string
+ *                 description: URL to media file (if content_type is not text)
  *     responses:
  *       201:
  *         description: Message sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ChatMessage'
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Contact not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
     const { content, content_type = 'text', media_url } = req.body;
 
-    if (!content) {
-      return res.status(400).json({
+    // First verify the contact exists
+    const { data: contact, error: contactError } = await supabase
+      .from('chat_contacts')
+      .select('id')
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId)
+      .single();
+
+    if (contactError || !contact) {
+      return res.status(404).json({
         success: false,
-        error: 'Message content is required'
+        error: 'Contact not found'
       });
     }
 
-    const messageData = {
-      restaurant_id: restaurantId,
-      contact_id: id,
-      sender_type: 'restaurant',
-      sender_id: req.user?.id,
-      content,
-      content_type,
-      media_url,
-      is_read: false
-    };
-
     const { data, error } = await supabase
       .from('chat_messages')
-      .insert(messageData)
+      .insert([{
+        restaurant_id: restaurantId,
+        sender_id: req.user?.id,
+        sender_type: 'agent',
+        content,
+        content_type,
+        media_url,
+        status: 'sent'
+      }])
       .select()
       .single();
 
@@ -380,12 +597,6 @@ router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, asyn
         error: error.message
       });
     }
-
-    // Update contact's last_message_at
-    await supabase
-      .from('chat_contacts')
-      .update({ last_message_at: new Date().toISOString() })
-      .eq('id', id);
 
     res.status(201).json({
       success: true,
@@ -403,7 +614,7 @@ router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, asyn
  * @swagger
  * /api/chat/messages/{id}/read:
  *   patch:
- *     summary: Mark message as read
+ *     summary: Mark a message as read
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -418,24 +629,42 @@ router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, asyn
  *     responses:
  *       200:
  *         description: Message marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ChatMessage'
+ *       404:
+ *         description: Message not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id;
     const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
 
     const { data, error } = await supabase
       .from('chat_messages')
-      .update({ is_read: true })
+      .update({
+        is_read: true,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id)
       .eq('restaurant_id', restaurantId)
       .select()
       .single();
 
-    if (error) {
-      return res.status(400).json({
+    if (error || !data) {
+      return res.status(404).json({
         success: false,
-        error: error.message
+        error: 'Message not found'
       });
     }
 
@@ -455,130 +684,67 @@ router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (
  * @swagger
  * /api/chat/analytics:
  *   get:
- *     summary: Get chat analytics
+ *     summary: Get chat analytics for current restaurant
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
- *         name: period
+ *         name: date
  *         schema:
  *           type: string
- *           enum: [day, week, month]
- *           default: week
- *         description: Time period for analytics
+ *           format: date
+ *         description: Date to get analytics for (default: today)
  *     responses:
  *       200:
  *         description: Chat analytics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/ChatAnalytics'
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Restaurant access required
  */
 router.get('/analytics', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
-    const period = req.query.period as string || 'week';
+    const date = req.query.date as string || new Date().toISOString().split('T')[0];
 
-    let startDate: string;
-    const endDate = new Date().toISOString();
+    // Get analytics data
+    const { data: contacts, error: contactsError } = await supabase
+      .from('chat_contacts')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .gte('created_at', date);
 
-    switch (period) {
-      case 'day':
-        startDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        break;
-      case 'week':
-        startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        break;
-      case 'month':
-        startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-        break;
-      default:
-        startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    }
+    const { data: messages, error: messagesError } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .gte('created_at', date);
 
-    const [
-      totalContacts,
-      newContacts,
-      totalMessages,
-      messagesByType,
-      responseTime
-    ] = await Promise.all([
-      // Total de contatos
-      supabase
-        .from('chat_contacts')
-        .select('id', { count: 'exact' })
-        .eq('restaurant_id', restaurantId),
-
-      // Novos contatos no período
-      supabase
-        .from('chat_contacts')
-        .select('id', { count: 'exact' })
-        .eq('restaurant_id', restaurantId)
-        .gte('created_at', startDate)
-        .lte('created_at', endDate),
-
-      // Total de mensagens no período
-      supabase
-        .from('chat_messages')
-        .select('id', { count: 'exact' })
-        .eq('restaurant_id', restaurantId)
-        .gte('created_at', startDate)
-        .lte('created_at', endDate),
-
-      // Mensagens por tipo de remetente
-      supabase
-        .from('chat_messages')
-        .select('sender_type')
-        .eq('restaurant_id', restaurantId)
-        .gte('created_at', startDate)
-        .lte('created_at', endDate),
-
-      // Tempo médio de resposta (últimas 100 mensagens)
-      supabase
-        .from('chat_messages')
-        .select('created_at, sender_type')
-        .eq('restaurant_id', restaurantId)
-        .order('created_at', { ascending: false })
-        .limit(100)
-    ]);
-
-    // Calcular estatísticas
-    const messagesByTypeCounts = messagesByType.data?.reduce((acc, msg) => {
-      acc[msg.sender_type] = (acc[msg.sender_type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>) || {};
-
-    // Calcular tempo médio de resposta
-    let avgResponseTime = 0;
-    if (responseTime.data && responseTime.data.length > 1) {
-      const responseTimes: number[] = [];
-      for (let i = 1; i < responseTime.data.length; i++) {
-        const current = responseTime.data[i];
-        const previous = responseTime.data[i - 1];
-        
-        if (current.sender_type === 'restaurant' && previous.sender_type === 'customer') {
-          const timeDiff = new Date(current.created_at).getTime() - new Date(previous.created_at).getTime();
-          responseTimes.push(timeDiff);
-        }
-      }
-      
-      if (responseTimes.length > 0) {
-        avgResponseTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
-      }
+    if (contactsError || messagesError) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch analytics'
+      });
     }
 
     const analytics = {
-      period,
-      contacts: {
-        total: totalContacts.count || 0,
-        new: newContacts.count || 0
-      },
-      messages: {
-        total: totalMessages.count || 0,
-        byType: messagesByTypeCounts
-      },
-      performance: {
-        avgResponseTime: Math.round(avgResponseTime / 1000), // em segundos
-        responseRate: totalMessages.count ? 
-          ((messagesByTypeCounts.restaurant || 0) / totalMessages.count) * 100 : 0
-      }
+      total_conversations: contacts?.length || 0,
+      new_conversations: contacts?.filter(c => c.customer_type === 'new').length || 0,
+      ai_handled_conversations: messages?.filter(m => m.sender_type === 'ai').length || 0,
+      human_handled_conversations: messages?.filter(m => m.sender_type === 'agent').length || 0,
+      avg_response_time: 0, // Would need more complex calculation
+      avg_resolution_time: 0, // Would need more complex calculation
+      popular_topics: {} // Would need NLP analysis
     };
 
     res.json({
