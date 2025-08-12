@@ -3,15 +3,12 @@ import Joi from 'joi';
 
 export const validate = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    console.log('Validando dados:', req.body);
     const { error } = schema.validate(req.body);
     if (error) {
-      console.error('Erro de validação:', error.details);
       res.status(400).json({
         success: false,
         message: 'Dados inválidos',
-        errors: error.details.map(detail => detail.message),
-        details: error.details
+        errors: error.details.map(detail => detail.message)
       });
       return;
     }
@@ -334,4 +331,24 @@ export const authSchemas = {
     restaurantName: Joi.string().required().min(2).max(100),
     phone: Joi.string().optional().max(20)
   })
-}; 
+};
+
+// WhatsApp schemas
+export const whatsappProfileSchema = Joi.object({
+  restaurantId: Joi.string().uuid().required(),
+  profile: Joi.object({
+    about: Joi.string().max(139).optional(),
+    description: Joi.string().max(512).optional(),
+    email: Joi.string().email().optional(),
+    address: Joi.string().max(256).optional(),
+    websites: Joi.array().items(Joi.string().uri()).optional()
+  })
+    .min(1)
+    .required()
+});
+
+export const registerTemplateSchema = Joi.object({
+  restaurantId: Joi.string().uuid().required(),
+  template: Joi.object().required(),
+  language: Joi.string().optional()
+}); 

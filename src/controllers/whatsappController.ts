@@ -521,8 +521,6 @@ export class WhatsAppController {
             if (change.value.messages) {
               for (const message of change.value.messages) {
                 // Processar mensagem recebida
-                console.log('Mensagem recebida:', message)
-                
                 // Aqui você pode implementar a lógica de resposta automática
                 // Por exemplo, salvar a mensagem no banco e enviar uma resposta
               }
@@ -925,6 +923,86 @@ export class WhatsAppController {
 
     } catch (error) {
       throw new Error(`Erro ao processar callback: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
+    }
+  }
+
+  static async updateBusinessProfile(req: Request, res: Response) {
+    try {
+      const { restaurantId, profile } = req.body
+      if (!restaurantId) {
+        return res.status(400).json({ success: false, error: 'Restaurant ID é obrigatório' })
+      }
+
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      if (!integration) {
+        return res.status(404).json({ success: false, error: 'Integração WhatsApp não encontrada' })
+      }
+
+      const accessToken = await WhatsAppService.getValidAccessToken(integration.business_account_id)
+      if (!accessToken) {
+        return res.status(401).json({ success: false, error: 'Token de acesso inválido ou expirado' })
+      }
+
+      const result = await WhatsAppService.updateBusinessProfile(
+        integration.phone_number_id,
+        profile,
+        accessToken
+      )
+
+      res.json({ success: true, data: result })
+    } catch (error) {
+      console.error('Erro ao atualizar perfil do WhatsApp:', error)
+      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+    }
+  }
+
+  static async uploadProfilePhoto(req: RequestWithFile, res: Response) {
+    try {
+      const { restaurantId } = req.body
+      const file = req.file
+      if (!restaurantId || !file) {
+        return res.status(400).json({ success: false, error: 'Restaurant ID e arquivo são obrigatórios' })
+      }
+
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      if (!integration) {
+        return res.status(404).json({ success: false, error: 'Integração WhatsApp não encontrada' })
+      }
+
+      const accessToken = await WhatsAppService.getValidAccessToken(integration.business_account_id)
+      if (!accessToken) {
+        return res.status(401).json({ success: false, error: 'Token de acesso inválido ou expirado' })
+      }
+
+      const result = await WhatsAppService.uploadProfilePhoto(
+        integration.phone_number_id,
+        file.buffer,
+        file.originalname,
+        file.mimetype,
+        accessToken
+      )
+
+      res.json({ success: true, data: result })
+    } catch (error) {
+      console.error('Erro ao enviar foto de perfil:', error)
+      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+    }
+  }
+
+  static async registerTemplate(req: Request, res: Response) {
+    try {
+      const { restaurantId, template, language } = req.body
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      if (!integration) return res.status(404).json({ success: false, error: 'Integração WhatsApp não encontrada' })
+      const accessToken = await WhatsAppService.getValidAccessToken(integration.business_account_id)
+      if (!accessToken) return res.status(401).json({ success: false, error: 'Token de acesso inválido ou expirado' })
+
+      const payload = { ...template, language: language || template.language }
+      const result = await WhatsAppService.registerTemplate(integration.business_account_id, payload, accessToken)
+      res.json({ success: true, data: result })
+    } catch (error) {
+      console.error('Erro ao registrar template:', error)
+      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
 } 

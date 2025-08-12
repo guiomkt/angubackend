@@ -271,4 +271,210 @@ export class AuthService {
       throw new Error('Token inválido');
     }
   }
+
+  static async refreshToken(token: string): Promise<any> {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+      
+      const user = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', decoded.userId)
+        .single();
+
+      if (!user.data) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      const newToken = jwt.sign(
+        { userId: user.data.id, email: user.data.email },
+        process.env.JWT_SECRET!,
+        { expiresIn: '7d' }
+      );
+
+      return {
+        token: newToken,
+        user: user.data
+      };
+    } catch (error) {
+      throw new Error('Token inválido');
+    }
+  }
+
+  static async logout(token: string): Promise<void> {
+    // Em uma implementação mais robusta, você poderia invalidar o token
+    // Por enquanto, apenas retornamos sucesso
+    return;
+  }
+
+  static async initiateMetaLogin(userId: string): Promise<any> {
+    try {
+      // Gerar state único
+      const state = Math.random().toString(36).substring(7);
+      
+      // Buscar dados do usuário e restaurante
+      const user = await supabase
+        .from('users')
+        .select(`
+          *,
+          restaurants (*)
+        `)
+        .eq('id', userId)
+        .single();
+
+      if (!user.data) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      const restaurantId = user.data.restaurants?.[0]?.id;
+      if (!restaurantId) {
+        throw new Error('Restaurante não encontrado');
+      }
+
+      // Criar state com dados necessários
+      const stateData = {
+        userId,
+        restaurantId,
+        redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp/callback`,
+        timestamp: Date.now()
+      };
+
+      const encodedState = encodeURIComponent(JSON.stringify(stateData));
+
+      // Gerar URL de autorização
+      const clientId = process.env.FACEBOOK_APP_ID;
+      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+      
+      const params = new URLSearchParams({
+        client_id: clientId!,
+        redirect_uri: redirectUri,
+        state: encodedState,
+        scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
+      });
+
+      const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+
+      return {
+        authUrl,
+        state: encodedState
+      };
+    } catch (error) {
+      throw new Error(`Erro ao iniciar login Meta: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  }
+
+  static async handleMetaCallback(code: string, state: string): Promise<any> {
+    try {
+      // Decodificar state
+      const stateData = JSON.parse(decodeURIComponent(state));
+      const { userId, restaurantId } = stateData;
+
+      // Trocar code por short-lived token
+      const clientId = process.env.FACEBOOK_APP_ID;
+      const clientSecret = process.env.FACEBOOK_APP_SECRET;
+      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+
+      const tokenResponse = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: clientId!,
+          redirect_uri: redirectUri,
+          client_secret: clientSecret!,
+          code: code
+        })
+      });
+
+      const tokenData = await tokenResponse.json();
+
+      if (tokenData.error) {
+        throw new Error(`Erro ao trocar code por token: ${tokenData.error.message}`);
+      }
+
+      // Trocar por long-lived token
+      const longLivedResponse = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        }
+      });
+
+      const longLivedParams = new URLSearchParams({
+        grant_type: 'fb_exchange_token',
+        client_id: clientId!,
+        client_secret: clientSecret!,
+        fb_exchange_token: tokenData.access_token
+      });
+
+      const longLivedUrl = `https://graph.facebook.com/v19.0/oauth/access_token?${longLivedParams.toString()}`;
+      const longLivedData = await fetch(longLivedUrl).then(res => res.json());
+
+      if (longLivedData.error) {
+        throw new Error(`Erro ao trocar por long-lived token: ${longLivedData.error.message}`);
+      }
+
+      // Buscar contas de negócio
+      const accountsResponse = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedData.access_token}`);
+      const accountsData = await accountsResponse.json();
+
+      if (accountsData.error) {
+        throw new Error(`Erro ao buscar contas: ${accountsData.error.message}`);
+      }
+
+      // Salvar token no banco
+      const expiresAt = new Date();
+      expiresAt.setSeconds(expiresAt.getSeconds() + longLivedData.expires_in);
+
+      const { error: saveError } = await supabase
+        .from('meta_tokens')
+        .upsert({
+          user_id: userId,
+          restaurant_id: restaurantId,
+          access_token: longLivedData.access_token,
+          token_type: 'user',
+          expires_at: expiresAt.toISOString(),
+          business_accounts: accountsData.data || []
+        });
+
+      if (saveError) {
+        throw new Error(`Erro ao salvar token: ${saveError.message}`);
+      }
+
+      return {
+        success: true,
+        restaurantId,
+        businessAccounts: accountsData.data || []
+      };
+    } catch (error) {
+      throw new Error(`Erro no callback Meta: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  }
+
+  static async getMetaToken(restaurantId: string): Promise<any> {
+    try {
+      // Buscar token válido
+      const { data: tokenData, error } = await supabase
+        .from('meta_tokens')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .gte('expires_at', new Date().toISOString())
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error || !tokenData) {
+        throw new Error('Token não encontrado ou expirado');
+      }
+
+      return {
+        access_token: tokenData.access_token,
+        expires_in: Math.floor((new Date(tokenData.expires_at).getTime() - Date.now()) / 1000),
+        token_type: tokenData.token_type
+      };
+    } catch (error) {
+      throw new Error(`Erro ao obter token: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  }
 } 

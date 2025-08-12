@@ -224,6 +224,54 @@ Delete menu item
 Get waiting list entries for current restaurant
 - Query params: `status` (optional)
 
+### Customers
+
+#### GET /api/customers
+Get all customers for current restaurant with pagination and filters
+- Query params: `page`, `limit`, `search`, `status`, `customer_type`
+- Authentication required
+
+#### GET /api/customers/stats
+Get customer statistics for current restaurant
+- Authentication required
+
+#### GET /api/customers/:id
+Get customer by ID
+- Authentication required
+
+#### POST /api/customers
+Create new customer
+- Authentication required
+```json
+{
+  "name": "Customer Name",
+  "phone_number": "(11) 99999-9999",
+  "profile_image_url": "https://example.com/image.jpg",
+  "status": "new",
+  "customer_type": "new",
+  "tags": ["vip", "returning"],
+  "notes": "Special customer notes",
+  "ai_enable": true
+}
+```
+
+#### PUT /api/customers/:id
+Update customer
+- Authentication required
+
+#### DELETE /api/customers/:id
+Delete customer
+- Authentication required
+
+#### PATCH /api/customers/:id/status
+Update customer status
+- Authentication required
+```json
+{
+  "status": "active"
+}
+```
+
 ### Experience Events
 
 #### GET /api/experience/events

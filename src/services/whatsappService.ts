@@ -573,4 +573,67 @@ export class WhatsAppService {
       return []
     }
   }
+
+  static async updateBusinessProfile(
+    phoneNumberId: string,
+    profile: {
+      about?: string
+      description?: string
+      email?: string
+      address?: string
+      websites?: string[]
+    },
+    accessToken: string
+  ): Promise<any> {
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v19.0/${phoneNumberId}/whatsapp_business_profile`,
+        profile,
+        { headers: await this.getMetaAPIHeaders(accessToken) }
+      )
+      return response.data
+    } catch (error) {
+      console.error('Erro ao atualizar perfil WhatsApp:', error)
+      throw new Error('Falha ao atualizar perfil do WhatsApp Business')
+    }
+  }
+
+  static async uploadProfilePhoto(
+    phoneNumberId: string,
+    file: Buffer,
+    fileName: string,
+    mimeType: string,
+    accessToken: string
+  ): Promise<any> {
+    return this.uploadMedia(phoneNumberId, file, fileName, mimeType, accessToken)
+  }
+
+  static async registerTemplate(
+    wabaId: string,
+    template: {
+      name: string
+      category: string
+      language?: string
+      components: any[]
+    },
+    accessToken: string
+  ): Promise<any> {
+    try {
+      const payload = {
+        name: template.name,
+        category: template.category,
+        language: template.language,
+        components: template.components
+      }
+      const response = await axios.post(
+        `https://graph.facebook.com/v19.0/${wabaId}/message_templates`,
+        payload,
+        { headers: await this.getMetaAPIHeaders(accessToken) }
+      )
+      return response.data
+    } catch (error) {
+      console.error('Erro ao registrar template:', error)
+      throw new Error('Falha ao registrar template na WABA')
+    }
+  }
 } 

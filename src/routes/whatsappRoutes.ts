@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth'
 import { validate } from '../middleware/validation'
 import * as Joi from 'joi'
 import multer from 'multer'
+import { whatsappProfileSchema, registerTemplateSchema } from '../middleware/validation'
 
 const router = Router()
 
@@ -997,6 +998,39 @@ router.get('/messages/:restaurantId', authenticateToken, WhatsAppController.getM
  *         description: Erro interno do servidor
  */
 router.post('/token', authenticateToken, validate(saveTokenSchema), WhatsAppController.saveToken)
+
+/**
+ * @swagger
+ * /api/whatsapp/profile:
+ *   post:
+ *     summary: Atualizar perfil do WhatsApp Business
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/profile', authenticateToken, validate(whatsappProfileSchema), WhatsAppController.updateBusinessProfile)
+
+/**
+ * @swagger
+ * /api/whatsapp/profile/photo:
+ *   post:
+ *     summary: Enviar foto de perfil do WhatsApp Business
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/profile/photo', authenticateToken, upload.single('file'), WhatsAppController.uploadProfilePhoto)
+
+/**
+ * @swagger
+ * /api/whatsapp/templates:
+ *   post:
+ *     summary: Registrar template na WABA
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/templates', authenticateToken, validate(registerTemplateSchema), WhatsAppController.registerTemplate)
 
 /**
  * @swagger

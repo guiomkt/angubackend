@@ -433,4 +433,218 @@ router.delete('/blocked-dates/:id', authenticateToken, requireRestaurant, async 
   }
 });
 
+/**
+ * Experiences CRUD (bonifications, events, events_exclusive)
+ */
+
+// Bonifications
+router.get('/bonifications', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_bonifications')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data: data || [] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.post('/bonifications', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const payload = { ...req.body, restaurant_id: restaurantId };
+    const { data, error } = await supabase
+      .from('experience_bonifications')
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.put('/bonifications/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_bonifications')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.delete('/bonifications/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { error } = await supabase
+      .from('experience_bonifications')
+      .delete()
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId);
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// Events
+router.get('/events/list', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_events')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data: data || [] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.post('/events', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const payload = { ...req.body, restaurant_id: restaurantId };
+    const { data, error } = await supabase
+      .from('experience_events')
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.put('/events/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_events')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.delete('/events/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { error } = await supabase
+      .from('experience_events')
+      .delete()
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId);
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// Events Exclusive
+router.get('/events-exclusive', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_events_exclusives')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .order('created_at', { ascending: false });
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data: data || [] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.post('/events-exclusive', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const payload = { ...req.body, restaurant_id: restaurantId };
+    const { data, error } = await supabase
+      .from('experience_events_exclusives')
+      .insert([payload])
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.put('/events-exclusive/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('experience_events_exclusives')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId)
+      .select('*')
+      .single();
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.delete('/events-exclusive/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const restaurantId = req.user?.restaurant_id;
+    const { error } = await supabase
+      .from('experience_events_exclusives')
+      .delete()
+      .eq('id', id)
+      .eq('restaurant_id', restaurantId);
+
+    if (error) return res.status(400).json({ success: false, error: error.message });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 export default router; 

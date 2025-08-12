@@ -158,6 +158,21 @@ export interface ChatContact extends BaseEntity {
   ai_enable: boolean;
 }
 
+export interface CustomerFilters {
+  search?: string;
+  status?: string;
+  customer_type?: string;
+}
+
+export interface CustomerStats {
+  total_customers: number;
+  new_customers: number;
+  active_customers: number;
+  inactive_customers: number;
+  vip_customers: number;
+  returning_customers: number;
+}
+
 export interface ChatMessage extends BaseEntity {
   sender_type: 'customer' | 'restaurant' | 'ai';
   sender_id?: string;

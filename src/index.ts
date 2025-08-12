@@ -21,6 +21,10 @@ import customerRoutes from './routes/customerRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import chatRoutes from './routes/chatRoutes';
 import whatsappRoutes from './routes/whatsappRoutes';
+import uploadRoutes from './routes/uploadRoutes';
+import aiRoutes from './routes/aiRoutes';
+import crmRoutes from './routes/crmRoutes';
+import userRoutes from './routes/userRoutes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -28,7 +32,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001;
 
 // Swagger configuration
 const swaggerOptions = {
@@ -45,7 +49,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: `http://localhost:${port}`,
+        url: `http://localhost:${PORT}`,
         description: 'Development server'
       },
       {
@@ -226,6 +230,15 @@ const swaggerOptions = {
             updated_at: { type: 'string', format: 'date-time' }
           }
         },
+        Pagination: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            total: { type: 'number' },
+            totalPages: { type: 'number' }
+          }
+        },
         DashboardStats: {
           type: 'object',
           properties: {
@@ -288,8 +301,8 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: parseInt(process.env.RATE_LIMIT_MAX || '1000'), // limit each IP to requests per hour
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
   message: {
     success: false,
     error: 'Too many requests from this IP, please try again later.'
@@ -297,25 +310,24 @@ const limiter = rateLimit({
 });
 
 // Middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
 app.use(helmet());
 app.use(compression());
 app.use(morgan('combined'));
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://cheffguio.com', 'https://www.cheffguio.com']
-    : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'],
-  credentials: true
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(limiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
-    status: 'ok', 
+    status: 'OK', 
+    app: 'Angu API',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
     version: '1.0.0'
   });
 });
@@ -339,6 +351,10 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/crm', crmRoutes);
+app.use('/api/users', userRoutes);
 
 // 404 handler
 app.use(notFound);
@@ -347,10 +363,10 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Start server
-app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
-  console.log(`📚 API Documentation available at http://localhost:${port}/api-docs`);
-  console.log(`🏥 Health check available at http://localhost:${port}/health`);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📚 API Documentation available at http://localhost:${PORT}/api-docs`);
+  console.log(`🏥 Health check available at http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

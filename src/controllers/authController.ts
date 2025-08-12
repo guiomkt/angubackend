@@ -258,11 +258,145 @@ export class AuthController {
    */
   static async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      // Em uma implementação mais robusta, você poderia invalidar o token
-      // Por enquanto, apenas retornamos sucesso
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      
+      if (token) {
+        await AuthService.logout(token);
+      }
+      
       res.status(200).json({
         success: true,
         message: 'Logout realizado com sucesso'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/auth/meta/login:
+   *   get:
+   *     summary: Inicia login OAuth com Meta
+   *     tags: [Auth]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: URL de autorização gerada
+   *       401:
+   *         description: Não autorizado
+   *       500:
+   *         description: Erro interno do servidor
+   */
+  static async initiateMetaLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuário não autenticado'
+        });
+      }
+
+      const result = await AuthService.initiateMetaLogin(userId);
+      
+      res.status(200).json({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/auth/meta/callback:
+   *   get:
+   *     summary: Callback OAuth Meta
+   *     tags: [Auth]
+   *     responses:
+   *       200:
+   *         description: Autorização processada
+   *       400:
+   *         description: Dados inválidos
+   *       500:
+   *         description: Erro interno do servidor
+   */
+  static async handleMetaCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state) {
+        return res.status(400).json({
+          success: false,
+          message: 'Código e estado são obrigatórios'
+        });
+      }
+
+      const result = await AuthService.handleMetaCallback(code as string, state as string);
+      
+      // Redirecionar baseado no state
+      const stateData = JSON.parse(decodeURIComponent(state as string));
+      const redirectUrl = stateData.redirectUrl;
+      
+      if (redirectUrl.includes('localhost')) {
+        // Frontend local
+        res.redirect(`${redirectUrl}?code=${code}&state=${state}`);
+      } else {
+        // n8n ou outro sistema
+        res.json({
+          success: true,
+          data: result,
+          message: 'OAuth processado com sucesso'
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/auth/meta/token:
+   *   get:
+   *     summary: Obtém token válido para n8n
+   *     tags: [Auth]
+   *     responses:
+   *       200:
+   *         description: Token válido
+   *       401:
+   *         description: Não autorizado
+   *       404:
+   *         description: Token não encontrado
+   *       500:
+   *         description: Erro interno do servidor
+   */
+  static async getMetaToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      // Verificar API Key para n8n
+      const apiKey = req.headers['x-api-key'] as string;
+      if (!apiKey || apiKey !== process.env.N8N_API_KEY) {
+        return res.status(401).json({
+          success: false,
+          message: 'API Key inválida'
+        });
+      }
+
+      const restaurantId = req.query.restaurantId as string;
+      if (!restaurantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Restaurant ID é obrigatório'
+        });
+      }
+
+      const token = await AuthService.getMetaToken(restaurantId);
+      
+      res.status(200).json({
+        success: true,
+        data: token
       });
     } catch (error) {
       next(error);

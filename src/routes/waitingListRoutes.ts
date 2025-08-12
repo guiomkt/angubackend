@@ -665,4 +665,68 @@ router.delete('/:id', authenticateToken, requireRestaurant, async (req: Authenti
   }
 });
 
+/**
+ * Waiting List Config endpoints
+ */
+router.get('/config', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const { data, error } = await supabase
+      .from('waiting_list_config')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle();
+
+    if (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+
+    res.json({ success: true, data: data || null });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.post('/config', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    const payload = { ...req.body, restaurant_id: restaurantId };
+
+    // Upsert by restaurant_id
+    const { data: existing, error: selError } = await supabase
+      .from('waiting_list_config')
+      .select('id')
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle();
+
+    if (selError) {
+      return res.status(400).json({ success: false, error: selError.message });
+    }
+
+    let result;
+    if (existing?.id) {
+      const { data, error } = await supabase
+        .from('waiting_list_config')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+      if (error) return res.status(400).json({ success: false, error: error.message });
+      result = data;
+    } else {
+      const { data, error } = await supabase
+        .from('waiting_list_config')
+        .insert([payload])
+        .select('*')
+        .single();
+      if (error) return res.status(400).json({ success: false, error: error.message });
+      result = data;
+    }
+
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 export default router; 
