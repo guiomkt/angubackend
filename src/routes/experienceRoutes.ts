@@ -126,13 +126,13 @@ router.get('/events', authenticateToken, requireRestaurant, async (req: any, res
       events_exclusive: events_exclusive.data || [],
     };
 
-    res.json({
+    return res.json({
       success: true,
       data: experiences
     });
   } catch (error) {
     console.error('Error fetching experiences:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -181,12 +181,12 @@ router.get('/blocked-dates', authenticateToken, requireRestaurant, async (req: a
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: data || []
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -266,12 +266,12 @@ router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: 
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -358,12 +358,12 @@ router.put('/blocked-dates/:id', authenticateToken, requireRestaurant, async (re
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -421,12 +421,12 @@ router.delete('/blocked-dates/:id', authenticateToken, requireRestaurant, async 
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Blocked date deleted successfully'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -448,9 +448,9 @@ router.get('/bonifications', authenticateToken, requireRestaurant, async (req: a
       .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data: data || [] });
+    return res.json({ success: true, data: data || [] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -465,9 +465,9 @@ router.post('/bonifications', authenticateToken, requireRestaurant, async (req: 
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.status(201).json({ success: true, data });
+    return res.status(201).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -484,9 +484,9 @@ router.put('/bonifications/:id', authenticateToken, requireRestaurant, async (re
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data });
+    return res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -501,9 +501,9 @@ router.delete('/bonifications/:id', authenticateToken, requireRestaurant, async 
       .eq('restaurant_id', restaurantId);
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -518,9 +518,9 @@ router.get('/events/list', authenticateToken, requireRestaurant, async (req: any
       .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data: data || [] });
+    return res.json({ success: true, data: data || [] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -535,9 +535,9 @@ router.post('/events', authenticateToken, requireRestaurant, async (req: any, re
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.status(201).json({ success: true, data });
+    return res.status(201).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -554,9 +554,9 @@ router.put('/events/:id', authenticateToken, requireRestaurant, async (req: any,
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data });
+    return res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -571,9 +571,9 @@ router.delete('/events/:id', authenticateToken, requireRestaurant, async (req: a
       .eq('restaurant_id', restaurantId);
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -588,9 +588,9 @@ router.get('/events-exclusive', authenticateToken, requireRestaurant, async (req
       .order('created_at', { ascending: false });
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data: data || [] });
+    return res.json({ success: true, data: data || [] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -605,9 +605,9 @@ router.post('/events-exclusive', authenticateToken, requireRestaurant, async (re
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.status(201).json({ success: true, data });
+    return res.status(201).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -624,9 +624,9 @@ router.put('/events-exclusive/:id', authenticateToken, requireRestaurant, async 
       .single();
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data });
+    return res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -641,9 +641,9 @@ router.delete('/events-exclusive/:id', authenticateToken, requireRestaurant, asy
       .eq('restaurant_id', restaurantId);
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

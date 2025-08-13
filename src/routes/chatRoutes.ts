@@ -205,7 +205,7 @@ router.get('/contacts', authenticateToken, requireRestaurant, async (req: Authen
       });
     }
 
-    res.json({
+return res.json({
       success: true,
       data: data || [],
       pagination: {
@@ -216,7 +216,7 @@ router.get('/contacts', authenticateToken, requireRestaurant, async (req: Authen
       }
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -277,12 +277,12 @@ router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -373,12 +373,12 @@ router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -482,7 +482,7 @@ router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async
       });
     }
 
-    res.json({
+return res.json({
       success: true,
       data: data || [],
       pagination: {
@@ -493,7 +493,7 @@ router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async
       }
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -598,12 +598,12 @@ router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, asyn
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -668,12 +668,12 @@ router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -747,12 +747,12 @@ router.get('/analytics', authenticateToken, requireRestaurant, async (req: Authe
       popular_topics: {} // Would need NLP analysis
     };
 
-    res.json({
+    return res.json({
       success: true,
       data: analytics
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });

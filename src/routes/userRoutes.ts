@@ -13,9 +13,9 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
       .eq('restaurant_id', restaurantId);
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data: data || [] });
+    return res.json({ success: true, data: data || [] });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -29,9 +29,9 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
       .select('*');
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.status(201).json({ success: true, data });
+    return res.status(201).json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -47,9 +47,9 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
       .select('*');
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true, data });
+    return res.json({ success: true, data });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -64,9 +64,9 @@ router.delete('/:id', authenticateToken, requireRestaurant, async (req: Authenti
       .eq('restaurant_id', restaurantId);
 
     if (error) return res.status(400).json({ success: false, error: error.message });
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

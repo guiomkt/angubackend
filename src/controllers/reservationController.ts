@@ -25,9 +25,9 @@ export class ReservationController {
         limit,
         filters
       );
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -38,9 +38,9 @@ export class ReservationController {
       }
 
       const result = await reservationService.getTodayReservations(req.user.restaurant_id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -52,9 +52,9 @@ export class ReservationController {
 
       const days = parseInt(req.query.days as string) || 7;
       const result = await reservationService.getUpcomingReservations(req.user.restaurant_id, days);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -62,9 +62,9 @@ export class ReservationController {
     try {
       const { id } = req.params;
       const result = await reservationService.getReservationById(id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -102,9 +102,9 @@ export class ReservationController {
       };
 
       const result = await reservationService.createReservation(reservationData);
-      res.status(201).json(result);
+return res.status(201).json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -112,9 +112,9 @@ export class ReservationController {
     try {
       const { id } = req.params;
       const result = await reservationService.updateReservation(id, req.body);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -122,9 +122,9 @@ export class ReservationController {
     try {
       const { id } = req.params;
       const result = await reservationService.deleteReservation(id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -138,9 +138,9 @@ export class ReservationController {
       }
 
       const result = await reservationService.updateReservationStatus(id, status);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 }

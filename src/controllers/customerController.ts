@@ -615,9 +615,9 @@ export class CustomerController {
         .gte('created_at', from);
 
       if (error) return res.status(400).json({ success: false, error: error.message });
-      res.json({ success: true, data: data || [] });
+      return res.json({ success: true, data: data || [] });
     } catch (error) {
-      res.status(500).json({ success: false, error: 'Internal server error' });
+      return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 
@@ -677,9 +677,9 @@ export class CustomerController {
         .lt('created_at', String(to));
 
       if (error) return res.status(400).json({ success: false, error: error.message });
-      res.json({ success: true, data: data || [] });
+      return res.json({ success: true, data: data || [] });
     } catch (error) {
-      res.status(500).json({ success: false, error: 'Internal server error' });
+      return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 } 

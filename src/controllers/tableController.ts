@@ -158,12 +158,12 @@ export class TableController {
       const tableData = req.body;
       const table = await TableService.createTable(tableData);
       
-      res.status(201).json({
+return res.status(201).json({
         success: true,
         data: table
       });
     } catch (error) {
-      res.status(400).json({ 
+return res.status(400).json({ 
         success: false,
         error: error instanceof Error ? error.message : 'Internal server error' 
       });
@@ -228,9 +228,9 @@ export class TableController {
       const tableData = req.body;
       
       const table = await TableService.updateTable(id, tableData);
-      res.json(table);
+return res.json(table);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 
@@ -439,9 +439,9 @@ export class TableController {
     try {
       const { id } = req.params;
       const history = await TableService.getTableStatusHistory(id);
-      res.json(history);
+return res.json(history);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 

@@ -101,13 +101,13 @@ export class WhatsAppController {
       // Construir URL de autorização OAuth
       const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(process.env.BACKEND_URL || 'http://localhost:3001')}/api/whatsapp/oauth/callback&scope=whatsapp_business_management,whatsapp_business_messaging&state=${state}`
 
-      res.json({
+return res.json({
         success: true,
         authUrl
       })
     } catch (error) {
       console.error('Erro ao iniciar OAuth:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -231,10 +231,10 @@ export class WhatsAppController {
       if (redirectUrl && redirectUrl.includes('localhost')) {
         // Frontend local
         const successUrl = `${redirectUrl}?success=true&restaurantId=${restaurantId}&businessAccountId=${businessAccount.id}&phoneNumberId=${phoneNumber.id}`
-        res.redirect(successUrl)
+        return res.redirect(successUrl)
       } else {
         // n8n ou outro sistema
-        res.json({
+        return res.json({
           success: true,
           data: {
             integration,
@@ -248,7 +248,7 @@ export class WhatsAppController {
 
     } catch (error) {
       console.error('Erro no callback OAuth:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -440,57 +440,7 @@ export class WhatsAppController {
     }
   }
 
-  static async getBusinessAccounts(req: Request, res: Response) {
-    try {
-      const { accessToken } = req.body
-
-      if (!accessToken) {
-        return res.status(400).json({
-          success: false,
-          error: 'Access token é obrigatório'
-        })
-      }
-
-      const businessAccounts = await WhatsAppService.getBusinessAccounts(accessToken)
-
-      res.json({
-        success: true,
-        data: businessAccounts
-      })
-    } catch (error) {
-      console.error('Erro ao buscar contas de negócio:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor'
-      })
-    }
-  }
-
-  static async getPhoneNumbers(req: Request, res: Response) {
-    try {
-      const { businessAccountId, accessToken } = req.body
-
-      if (!businessAccountId || !accessToken) {
-        return res.status(400).json({
-          success: false,
-          error: 'Business Account ID e Access Token são obrigatórios'
-        })
-      }
-
-      const phoneNumbers = await WhatsAppService.getPhoneNumbers(businessAccountId, accessToken)
-
-      res.json({
-        success: true,
-        data: phoneNumbers
-      })
-    } catch (error) {
-      console.error('Erro ao buscar números de telefone:', error)
-      res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor'
-      })
-    }
-  }
+  // Métodos duplicados removidos - usar OAuth em vez de tokens diretos
 
   static async saveIntegration(req: Request, res: Response) {
     try {
@@ -518,13 +468,13 @@ export class WhatsAppController {
         access_token: accessToken
       })
 
-      res.json({
+return res.json({
         success: true,
         data: integration
       })
     } catch (error) {
       console.error('Erro ao salvar integração:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -544,13 +494,13 @@ export class WhatsAppController {
 
       const integration = await WhatsAppService.getIntegration(restaurantId)
 
-      res.json({
+return res.json({
         success: true,
         data: integration
       })
     } catch (error) {
       console.error('Erro ao buscar integração:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -571,13 +521,13 @@ export class WhatsAppController {
 
       const integration = await WhatsAppService.updateIntegration(restaurantId, updates)
 
-      res.json({
+return res.json({
         success: true,
         data: integration
       })
     } catch (error) {
       console.error('Erro ao atualizar integração:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -597,13 +547,13 @@ export class WhatsAppController {
 
       await WhatsAppService.deleteIntegration(restaurantId)
 
-      res.json({
+return res.json({
         success: true,
         message: 'Integração removida com sucesso'
       })
     } catch (error) {
       console.error('Erro ao deletar integração:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -655,13 +605,13 @@ export class WhatsAppController {
         status: 'sent'
       })
 
-      res.json({
+return res.json({
         success: true,
         data: result
       })
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -715,13 +665,13 @@ export class WhatsAppController {
         status: 'sent'
       })
 
-      res.json({
+return res.json({
         success: true,
         data: result
       })
     } catch (error) {
       console.error('Erro ao enviar template:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -773,13 +723,13 @@ export class WhatsAppController {
         file_size: file.size
       })
 
-      res.json({
+return res.json({
         success: true,
         data: result
       })
     } catch (error) {
       console.error('Erro ao fazer upload de mídia:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -818,10 +768,10 @@ export class WhatsAppController {
 
       res.setHeader('Content-Type', 'application/octet-stream')
       res.setHeader('Content-Disposition', `attachment; filename="media-${mediaId}"`)
-      res.send(mediaBuffer)
+      return res.send(mediaBuffer)
     } catch (error) {
       console.error('Erro ao baixar mídia:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -861,13 +811,13 @@ export class WhatsAppController {
       // Atualizar status no banco
       await WhatsAppService.updateMessageStatus(messageId, status.status)
 
-      res.json({
+return res.json({
         success: true,
         data: status
       })
     } catch (error) {
       console.error('Erro ao buscar status da mensagem:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -908,13 +858,13 @@ export class WhatsAppController {
         accessToken
       )
 
-      res.json({
+return res.json({
         success: true,
         data: result
       })
     } catch (error) {
       console.error('Erro ao registrar webhook:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -932,13 +882,13 @@ export class WhatsAppController {
       )
 
       if (challengeResponse) {
-        res.status(200).send(challengeResponse)
+return res.status(200).send(challengeResponse)
       } else {
-        res.status(403).send('Forbidden')
+return res.status(403).send('Forbidden')
       }
     } catch (error) {
       console.error('Erro ao verificar webhook:', error)
-      res.status(500).send('Internal Server Error')
+return res.status(500).send('Internal Server Error')
     }
   }
 
@@ -967,10 +917,10 @@ export class WhatsAppController {
         }
       }
 
-      res.status(200).send('OK')
+return res.status(200).send('OK')
     } catch (error) {
       console.error('Erro ao processar webhook:', error)
-      res.status(500).send('Internal Server Error')
+return res.status(500).send('Internal Server Error')
     }
   }
 
@@ -994,13 +944,13 @@ export class WhatsAppController {
         tags
       })
 
-      res.json({
+return res.json({
         success: true,
         data: contact
       })
     } catch (error) {
       console.error('Erro ao salvar contato:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1020,13 +970,13 @@ export class WhatsAppController {
 
       const contact = await WhatsAppService.getContact(restaurantId, phoneNumber)
 
-      res.json({
+return res.json({
         success: true,
         data: contact
       })
     } catch (error) {
       console.error('Erro ao buscar contato:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1046,13 +996,13 @@ export class WhatsAppController {
 
       const contacts = await WhatsAppService.getContacts(restaurantId)
 
-      res.json({
+return res.json({
         success: true,
         data: contacts
       })
     } catch (error) {
       console.error('Erro ao buscar contatos:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1073,13 +1023,13 @@ export class WhatsAppController {
 
       const contact = await WhatsAppService.updateContact(restaurantId, phoneNumber, updates)
 
-      res.json({
+return res.json({
         success: true,
         data: contact
       })
     } catch (error) {
       console.error('Erro ao atualizar contato:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1099,13 +1049,13 @@ export class WhatsAppController {
 
       await WhatsAppService.deleteContact(restaurantId, phoneNumber)
 
-      res.json({
+return res.json({
         success: true,
         message: 'Contato removido com sucesso'
       })
     } catch (error) {
       console.error('Erro ao deletar contato:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1126,13 +1076,13 @@ export class WhatsAppController {
 
       const messages = await WhatsAppService.getMessages(restaurantId, Number(limit))
 
-      res.json({
+return res.json({
         success: true,
         data: messages
       })
     } catch (error) {
       console.error('Erro ao buscar mensagens:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1159,13 +1109,13 @@ export class WhatsAppController {
         expires_at: expiresAt
       })
 
-      res.json({
+return res.json({
         success: true,
         data: token
       })
     } catch (error) {
       console.error('Erro ao salvar token:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1185,13 +1135,13 @@ export class WhatsAppController {
 
       const token = await WhatsAppService.getToken(businessId)
 
-      res.json({
+return res.json({
         success: true,
         data: token
       })
     } catch (error) {
       console.error('Erro ao buscar token:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1212,13 +1162,13 @@ export class WhatsAppController {
 
       const newAccessToken = await WhatsAppService.refreshToken(businessId, refreshToken)
 
-      res.json({
+return res.json({
         success: true,
         data: { access_token: newAccessToken }
       })
     } catch (error) {
       console.error('Erro ao renovar token:', error)
-      res.status(500).json({
+return res.status(500).json({
         success: false,
         error: 'Erro interno do servidor'
       })
@@ -1248,10 +1198,10 @@ export class WhatsAppController {
         accessToken
       )
 
-      res.json({ success: true, data: result })
+return res.json({ success: true, data: result })
     } catch (error) {
       console.error('Erro ao atualizar perfil do WhatsApp:', error)
-      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+return res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
 
@@ -1281,10 +1231,10 @@ export class WhatsAppController {
         accessToken
       )
 
-      res.json({ success: true, data: result })
+return res.json({ success: true, data: result })
     } catch (error) {
       console.error('Erro ao enviar foto de perfil:', error)
-      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+return res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
 
@@ -1298,10 +1248,10 @@ export class WhatsAppController {
 
       const payload = { ...template, language: language || template.language }
       const result = await WhatsAppService.registerTemplate(integration.business_account_id, payload, accessToken)
-      res.json({ success: true, data: result })
+return res.json({ success: true, data: result })
     } catch (error) {
       console.error('Erro ao registrar template:', error)
-      res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+return res.status(500).json({ success: false, error: 'Erro interno do servidor' })
     }
   }
 

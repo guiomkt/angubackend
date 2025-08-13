@@ -156,7 +156,7 @@ router.post('/business-accounts', authenticateToken, validate(businessAccountsSc
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/phone-numbers', authenticateToken, validate(phoneNumbersSchema), WhatsAppController.getPhoneNumbers)
+// Rota removida - usar OAuth em vez de tokens diretos
 
 /**
  * @swagger
@@ -1129,10 +1129,13 @@ router.post('/oauth/token', validate(oauthTokenSchema), async (req, res) => {
     // TODO: Implement proper state verification
     // For now, we'll skip state verification
 
-    const result = await WhatsAppController.exchangeCodeForToken(code, restaurantId)
-    res.json(result)
+    // Método removido - usar OAuth em vez de troca direta de código
+return res.status(400).json({
+      success: false,
+      message: 'Método não suportado. Use OAuth para conectar WhatsApp.'
+    })
   } catch (error) {
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       message: 'Erro ao trocar código por token',
       error: error instanceof Error ? error.message : 'Erro desconhecido'
@@ -1185,12 +1188,12 @@ router.get('/validate-token', authenticateToken, async (req, res) => {
 
     const isValid = await WhatsAppController.validateToken(restaurantId as string)
     
-    res.json({
+return res.json({
       success: true,
       valid: isValid
     })
   } catch (error) {
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       message: 'Erro ao validar token',
       error: error instanceof Error ? error.message : 'Erro desconhecido'
@@ -1328,14 +1331,14 @@ router.post('/disconnect', authenticateToken, async (req, res) => {
 
     const result = await WhatsAppController.disconnectWhatsApp(restaurantId)
     
-    res.json({
+return res.json({
       success: true,
       message: 'WhatsApp desvinculado com sucesso',
       data: result
     })
   } catch (error) {
     console.error('Erro ao desvincular WhatsApp:', error)
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       error: 'Erro interno do servidor'
     })
@@ -1406,13 +1409,13 @@ router.get('/status', authenticateToken, async (req, res) => {
 
     const status = await WhatsAppController.getWhatsAppStatus(restaurantId as string)
     
-    res.json({
+return res.json({
       success: true,
       data: status
     })
   } catch (error) {
     console.error('Erro ao verificar status do WhatsApp:', error)
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       error: 'Erro interno do servidor'
     })

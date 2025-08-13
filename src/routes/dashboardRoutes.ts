@@ -188,12 +188,12 @@ router.get('/stats', authenticateToken, requireRestaurant, async (req: Authentic
       }
     };
 
-    res.json({
+return res.json({
       success: true,
       data: stats
     });
   } catch (error) {
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -275,12 +275,12 @@ router.get('/recent-activity', authenticateToken, requireRestaurant, async (req:
       tableChanges: recentTables.data || []
     };
 
-    res.json({
+return res.json({
       success: true,
       data: activity
     });
   } catch (error) {
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -375,12 +375,12 @@ router.get('/charts', authenticateToken, requireRestaurant, async (req: Authenti
       occupancy: processDataByDate(tableOccupancy.data || [], 'changed_at')
     };
 
-    res.json({
+return res.json({
       success: true,
       data: charts
     });
   } catch (error) {
-    res.status(500).json({
+return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });

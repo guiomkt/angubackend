@@ -120,9 +120,9 @@ export class MenuController {
     try {
       const categoryData = req.body;
       const category = await MenuService.createCategory(categoryData);
-      res.status(201).json(category);
+return res.status(201).json(category);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 
@@ -170,9 +170,9 @@ export class MenuController {
       const categoryData = req.body;
       
       const category = await MenuService.updateCategory(id, categoryData);
-      res.json(category);
+return res.json(category);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 
@@ -397,9 +397,9 @@ export class MenuController {
     try {
       const itemData = req.body;
       const item = await MenuService.createItem(itemData);
-      res.status(201).json(item);
+return res.status(201).json(item);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 
@@ -453,9 +453,9 @@ export class MenuController {
       const itemData = req.body;
       
       const item = await MenuService.updateItem(id, itemData);
-      res.json(item);
+return res.json(item);
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 
@@ -482,9 +482,9 @@ export class MenuController {
     try {
       const { id } = req.params;
       await MenuService.deleteItem(id);
-      res.status(204).send();
+return res.status(204).send();
     } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
 

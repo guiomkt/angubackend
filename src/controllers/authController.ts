@@ -45,18 +45,18 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async login(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async login(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password } = req.body;
       
       const result = await AuthService.login(email, password);
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         ...result
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -113,7 +113,7 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async register(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async register(req: Request, res: Response, next: NextFunction) {
     try {
       const { email, password, name, restaurantName, phone } = req.body;
       
@@ -125,13 +125,13 @@ export class AuthController {
         phone
       });
       
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
         message: 'Usuário registrado com sucesso',
         ...result
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -162,26 +162,26 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async getMe(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getMe(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
       
       if (!userId) {
-        res.status(401).json({
+        return res.status(401).json({
           success: false,
           message: 'Token inválido'
-        });
+        })
         return;
       }
       
       const result = await AuthService.getUserProfile(userId);
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         ...result
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -210,26 +210,26 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async refreshToken(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
       
       if (!userId) {
-        res.status(401).json({
+        return res.status(401).json({
           success: false,
           message: 'Token inválido'
-        });
+        })
         return;
       }
       
       const token = await AuthService.generateToken(userId);
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         token
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -256,7 +256,7 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async logout(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async logout(req: Request, res: Response, next: NextFunction) {
     try {
       const token = req.headers.authorization?.replace('Bearer ', '');
       
@@ -264,12 +264,12 @@ export class AuthController {
         await AuthService.logout(token);
       }
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         message: 'Logout realizado com sucesso'
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -289,24 +289,24 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async initiateMetaLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async initiateMetaLogin(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).user?.id;
       if (!userId) {
         return res.status(401).json({
           success: false,
           message: 'Usuário não autenticado'
-        });
+        })
       }
 
       const result = await AuthService.initiateMetaLogin(userId);
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: result
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -324,7 +324,7 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async handleMetaCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async handleMetaCallback(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, state } = req.query;
 
@@ -332,7 +332,7 @@ export class AuthController {
         return res.status(400).json({
           success: false,
           message: 'Código e estado são obrigatórios'
-        });
+        })
       }
 
       const result = await AuthService.handleMetaCallback(code as string, state as string);
@@ -343,17 +343,17 @@ export class AuthController {
       
       if (redirectUrl.includes('localhost')) {
         // Frontend local
-        res.redirect(`${redirectUrl}?code=${code}&state=${state}`);
+        return res.redirect(`${redirectUrl}?code=${code}&state=${state}`)
       } else {
         // n8n ou outro sistema
-        res.json({
+        return res.json({
           success: true,
           data: result,
           message: 'OAuth processado com sucesso'
-        });
+        })
       }
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -373,7 +373,7 @@ export class AuthController {
    *       500:
    *         description: Erro interno do servidor
    */
-  static async getMetaToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  static async getMetaToken(req: Request, res: Response, next: NextFunction) {
     try {
       // Verificar API Key para n8n
       const apiKey = req.headers['x-api-key'] as string;
@@ -381,7 +381,7 @@ export class AuthController {
         return res.status(401).json({
           success: false,
           message: 'API Key inválida'
-        });
+        })
       }
 
       const restaurantId = req.query.restaurantId as string;
@@ -389,17 +389,17 @@ export class AuthController {
         return res.status(400).json({
           success: false,
           message: 'Restaurant ID é obrigatório'
-        });
+        })
       }
 
       const token = await AuthService.getMetaToken(restaurantId);
       
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: token
-      });
+      })
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 } 

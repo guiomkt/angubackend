@@ -160,7 +160,7 @@ export class ReservationService {
       }
 
       // Remove end_time from data since it doesn't exist in the table
-      const { end_time, ...dataToInsert } = reservationData;
+      const { end_time, ...dataToInsert } = reservationData as any;
 
       const { data, error } = await supabase
         .from('reservations')

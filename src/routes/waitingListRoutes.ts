@@ -196,7 +196,7 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
       });
     }
 
-    res.json({
+return res.json({
       success: true,
       data: data || [],
       pagination: {
@@ -207,7 +207,7 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
       }
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -268,12 +268,12 @@ router.get('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -391,12 +391,12 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
       });
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -488,12 +488,12 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -588,12 +588,12 @@ router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: Au
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       data
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -653,12 +653,12 @@ router.delete('/:id', authenticateToken, requireRestaurant, async (req: Authenti
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Customer removed from waiting list successfully'
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error'
     });
@@ -681,9 +681,9 @@ router.get('/config', authenticateToken, requireRestaurant, async (req: Authenti
       return res.status(400).json({ success: false, error: error.message });
     }
 
-    res.json({ success: true, data: data || null });
+    return res.json({ success: true, data: data || null });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -723,9 +723,9 @@ router.post('/config', authenticateToken, requireRestaurant, async (req: Authent
       result = data;
     }
 
-    res.status(201).json({ success: true, data: result });
+    return res.status(201).json({ success: true, data: result });
   } catch (error) {
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

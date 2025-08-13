@@ -10,9 +10,9 @@ export class RestaurantController {
       const limit = parseInt(req.query.limit as string) || 10;
 
       const result = await restaurantService.getAllRestaurants(page, limit);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -20,9 +20,9 @@ export class RestaurantController {
     try {
       const { id } = req.params;
       const result = await restaurantService.getRestaurantById(id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -33,9 +33,9 @@ export class RestaurantController {
       }
 
       const result = await restaurantService.getRestaurantByUserId(req.user.id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -43,9 +43,9 @@ export class RestaurantController {
     try {
       const { userId } = req.params;
       const result = await restaurantService.getRestaurantByUserId(userId);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -61,9 +61,9 @@ export class RestaurantController {
       };
 
       const result = await restaurantService.createRestaurant(restaurantData);
-      res.status(201).json(result);
+return res.status(201).json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -76,9 +76,9 @@ export class RestaurantController {
       }
 
       const result = await restaurantService.updateRestaurant(id, req.body);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -91,9 +91,9 @@ export class RestaurantController {
       }
 
       const result = await restaurantService.deleteRestaurant(id);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 
@@ -107,9 +107,9 @@ export class RestaurantController {
       }
 
       const result = await restaurantService.updateOnboardingStatus(id, completed, step);
-      res.json(result);
+return res.json(result)
     } catch (error) {
-      next(error);
+      return next(error);
     }
   }
 }
