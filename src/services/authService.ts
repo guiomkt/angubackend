@@ -20,6 +20,42 @@ interface UserProfileResult {
   restaurant: any;
 }
 
+// Interfaces para respostas da API do Facebook
+interface FacebookTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  error?: {
+    message: string;
+    type: string;
+    code: number;
+  };
+}
+
+interface FacebookLongLivedTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  error?: {
+    message: string;
+    type: string;
+    code: number;
+  };
+}
+
+interface FacebookBusinessAccountsResponse {
+  data: Array<{
+    id: string;
+    name: string;
+    access_token: string;
+  }>;
+  error?: {
+    message: string;
+    type: string;
+    code: number;
+  };
+}
+
 export class AuthService {
   private static readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
   private static readonly JWT_EXPIRES_IN = '7d';
@@ -309,24 +345,40 @@ export class AuthService {
 
   static async initiateMetaLogin(userId: string): Promise<any> {
     try {
-      // Gerar state único
-      const state = Math.random().toString(36).substring(7);
-      
       // Buscar dados do usuário e restaurante
+      // O userId que vem do JWT é o id do auth.users
+      // Precisamos buscar na tabela users onde user_id = userId
       const user = await supabase
         .from('users')
         .select(`
           *,
           restaurants (*)
         `)
-        .eq('id', userId)
+        .eq('user_id', userId)
         .single();
 
       if (!user.data) {
-        throw new Error('Usuário não encontrado');
+        // Se não encontrar na tabela users, tentar buscar direto no restaurante
+        const restaurant = await supabase
+          .from('restaurants')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+        
+        if (!restaurant.data) {
+          throw new Error('Restaurante não encontrado');
+        }
+        
+        const restaurantId = restaurant.data.id;
+        
+        return {
+          authUrl: this.generateAuthUrl(userId, restaurantId),
+          state: this.generateState(userId, restaurantId)
+        };
       }
 
-      const restaurantId = user.data.restaurants?.[0]?.id;
+      const restaurantId = user.data.restaurant_id;
+      
       if (!restaurantId) {
         throw new Error('Restaurante não encontrado');
       }
@@ -352,7 +404,7 @@ export class AuthService {
         scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
       });
 
-      const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+      const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
 
       return {
         authUrl,
@@ -361,6 +413,51 @@ export class AuthService {
     } catch (error) {
       throw new Error(`Erro ao iniciar login Meta: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
+  }
+
+  /**
+   * Gera URL de autorização para OAuth
+   */
+  private static generateAuthUrl(userId: string, restaurantId: string): string {
+    const clientId = process.env.FACEBOOK_APP_ID;
+    // IMPORTANTE: O redirect_uri deve ser a URL do backend, não do frontend
+    const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+    
+    const stateData = {
+      userId,
+      restaurantId,
+      // Esta é a URL para onde o backend redirecionará após processar o OAuth
+      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+      timestamp: Date.now()
+    };
+
+    const encodedState = encodeURIComponent(JSON.stringify(stateData));
+    
+    const params = new URLSearchParams({
+      client_id: clientId!,
+      redirect_uri: redirectUri,
+      state: encodedState,
+      scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
+    });
+
+    const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
+    
+    return authUrl;
+  }
+
+  /**
+   * Gera state para OAuth
+   */
+  private static generateState(userId: string, restaurantId: string): string {
+    const stateData = {
+      userId,
+      restaurantId,
+      // Esta é a URL para onde o backend redirecionará após processar o OAuth
+      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+      timestamp: Date.now()
+    };
+
+    return encodeURIComponent(JSON.stringify(stateData));
   }
 
   static async handleMetaCallback(code: string, state: string): Promise<any> {
@@ -374,7 +471,7 @@ export class AuthService {
       const clientSecret = process.env.FACEBOOK_APP_SECRET;
       const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
 
-      const tokenResponse = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+      const tokenResponse = await fetch('https://graph.facebook.com/v20.0/oauth/access_token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -387,14 +484,14 @@ export class AuthService {
         })
       });
 
-      const tokenData = await tokenResponse.json();
+      const tokenData = await tokenResponse.json() as FacebookTokenResponse;
 
       if (tokenData.error) {
         throw new Error(`Erro ao trocar code por token: ${tokenData.error.message}`);
       }
 
       // Trocar por long-lived token
-      const longLivedResponse = await fetch('https://graph.facebook.com/v19.0/oauth/access_token', {
+      const longLivedResponse = await fetch('https://graph.facebook.com/v20.0/oauth/access_token', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -408,16 +505,16 @@ export class AuthService {
         fb_exchange_token: tokenData.access_token
       });
 
-      const longLivedUrl = `https://graph.facebook.com/v19.0/oauth/access_token?${longLivedParams.toString()}`;
-      const longLivedData = await fetch(longLivedUrl).then(res => res.json());
+      const longLivedUrl = `https://graph.facebook.com/v20.0/oauth/access_token?${longLivedParams.toString()}`;
+      const longLivedData = await fetch(longLivedUrl).then(res => res.json()) as FacebookLongLivedTokenResponse;
 
       if (longLivedData.error) {
         throw new Error(`Erro ao trocar por long-lived token: ${longLivedData.error.message}`);
       }
 
       // Buscar contas de negócio
-      const accountsResponse = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${longLivedData.access_token}`);
-      const accountsData = await accountsResponse.json();
+      const accountsResponse = await fetch(`https://graph.facebook.com/v20.0/me/accounts?access_token=${longLivedData.access_token}`);
+      const accountsData = await accountsResponse.json() as FacebookBusinessAccountsResponse;
 
       if (accountsData.error) {
         throw new Error(`Erro ao buscar contas: ${accountsData.error.message}`);

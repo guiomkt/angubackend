@@ -38,6 +38,7 @@ export const authenticateToken = async (
           restaurant_id = result.data.id;
         }
       } catch (e) {
+        // Ignorar erro ao buscar restaurante
       }
       
       req.user = { ...decoded, restaurant_id };

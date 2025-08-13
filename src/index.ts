@@ -62,7 +62,14 @@ const swaggerOptions = {
         bearerAuth: {
           type: 'http',
           scheme: 'bearer',
-          bearerFormat: 'JWT'
+          bearerFormat: 'JWT',
+          description: 'JWT token obtido através do login'
+        },
+        apiKeyAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-API-Key',
+          description: 'API Key para integrações externas (n8n)'
         }
       },
       schemas: {

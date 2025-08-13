@@ -1200,9 +1200,48 @@ router.get('/validate-token', authenticateToken, async (req, res) => {
 
 /**
  * @swagger
+ * /api/whatsapp/oauth/initiate:
+ *   get:
+ *     summary: Inicia o fluxo OAuth do WhatsApp
+ *     tags: [WhatsApp]
+ *     parameters:
+ *       - in: query
+ *         name: restaurantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID do restaurante
+ *       - in: query
+ *         name: redirectUrl
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: URL de redirecionamento após autorização
+ *     responses:
+ *       200:
+ *         description: URL de autorização gerada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 authUrl:
+ *                   type: string
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/oauth/initiate', WhatsAppController.initiateOAuth)
+
+/**
+ * @swagger
  * /api/whatsapp/oauth/callback:
  *   get:
- *     summary: Callback OAuth WhatsApp
+ *     summary: Callback OAuth do WhatsApp
  *     tags: [WhatsApp]
  *     parameters:
  *       - in: query
@@ -1220,6 +1259,37 @@ router.get('/validate-token', authenticateToken, async (req, res) => {
  *     responses:
  *       200:
  *         description: Autorização processada
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/oauth/callback', WhatsAppController.handleOAuthCallback)
+
+/**
+ * @swagger
+ * /api/whatsapp/disconnect:
+ *   post:
+ *     summary: Desvincula o WhatsApp do restaurante
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - restaurantId
+ *             properties:
+ *               restaurantId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: WhatsApp desvinculado com sucesso
  *         content:
  *           application/json:
  *             schema:
@@ -1231,44 +1301,120 @@ router.get('/validate-token', authenticateToken, async (req, res) => {
  *                   type: string
  *       400:
  *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/oauth/callback', async (req, res) => {
+router.post('/disconnect', authenticateToken, async (req, res) => {
   try {
-    const { code, state } = req.query
+    const { restaurantId } = req.body
 
-    if (!code || !state) {
+    if (!restaurantId) {
       return res.status(400).json({
         success: false,
-        message: 'Código e estado são obrigatórios'
+        error: 'Restaurant ID é obrigatório'
       })
     }
 
-    // Processar o código OAuth
-    const result = await WhatsAppController.processOAuthCallback(code as string, state as string)
-    
-    // Redirecionar baseado no state
-    const redirectUrl = decodeURIComponent(state as string)
-    
-    if (redirectUrl.includes('localhost')) {
-      // Frontend local
-      res.redirect(`${redirectUrl}?code=${code}&state=${state}`)
-    } else {
-      // n8n ou outro sistema
-      res.json({
-        success: true,
-        data: result,
-        message: 'OAuth processado com sucesso'
+    // Verificar se o usuário tem acesso ao restaurante
+    const user = (req as any).user
+    if (!user || !user.restaurant_id || user.restaurant_id !== restaurantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Não autorizado a desvincular este restaurante'
       })
     }
 
+    const result = await WhatsAppController.disconnectWhatsApp(restaurantId)
+    
+    res.json({
+      success: true,
+      message: 'WhatsApp desvinculado com sucesso',
+      data: result
+    })
   } catch (error) {
-    console.error('Erro no callback OAuth:', error)
+    console.error('Erro ao desvincular WhatsApp:', error)
     res.status(500).json({
       success: false,
-      message: 'Erro ao processar callback OAuth',
-      error: error instanceof Error ? error.message : 'Erro desconhecido'
+      error: 'Erro interno do servidor'
+    })
+  }
+})
+
+/**
+ * @swagger
+ * /api/whatsapp/status:
+ *   get:
+ *     summary: Verifica o status da integração WhatsApp
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: restaurantId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: Status da integração
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     isConnected:
+ *                       type: boolean
+ *                     integration:
+ *                       type: object
+ *                     lastConnected:
+ *                       type: string
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/status', authenticateToken, async (req, res) => {
+  try {
+    const { restaurantId } = req.query
+
+    if (!restaurantId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Restaurant ID é obrigatório'
+      })
+    }
+
+    // Verificar se o usuário tem acesso ao restaurante
+    const user = (req as any).user
+    if (!user || !user.restaurant_id || user.restaurant_id !== restaurantId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Não autorizado a verificar este restaurante'
+      })
+    }
+
+    const status = await WhatsAppController.getWhatsAppStatus(restaurantId as string)
+    
+    res.json({
+      success: true,
+      data: status
+    })
+  } catch (error) {
+    console.error('Erro ao verificar status do WhatsApp:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor'
     })
   }
 })

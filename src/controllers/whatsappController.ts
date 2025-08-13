@@ -3,12 +3,443 @@ import { WhatsAppService } from '../services/whatsappService'
 import { RestaurantService } from '../services/restaurantService'
 import axios from 'axios'
 import multer from 'multer'
+import { supabase } from '../config/database'
 
 interface RequestWithFile extends Request {
   file?: Express.Multer.File
 }
 
+interface TokenResponse {
+  access_token: string
+  token_type?: string
+  expires_in?: number
+}
+
+interface BusinessAccountsResponse {
+  data: Array<{
+    id: string
+    name: string
+    verification_status?: string
+    created_time?: string
+  }>
+}
+
+interface PhoneNumbersResponse {
+  data: Array<{
+    id: string
+    phone_number: string
+    display_name?: string
+    verified_name?: string
+    code_verification_status?: string
+  }>
+}
+
 export class WhatsAppController {
+  /**
+   * @swagger
+   * /api/whatsapp/oauth/initiate:
+   *   get:
+   *     summary: Inicia o fluxo OAuth do WhatsApp
+   *     tags: [WhatsApp]
+   *     parameters:
+   *       - in: query
+   *         name: restaurantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *           format: uuid
+   *         description: ID do restaurante
+   *       - in: query
+   *         name: redirectUrl
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: URL de redirecionamento após autorização
+   *     responses:
+   *       200:
+   *         description: URL de autorização gerada
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                 authUrl:
+   *                   type: string
+   *       400:
+   *         description: Dados inválidos
+   *       500:
+   *         description: Erro interno do servidor
+   */
+  static async initiateOAuth(req: Request, res: Response) {
+    try {
+      const { restaurantId, redirectUrl } = req.query
+
+      if (!restaurantId || !redirectUrl) {
+        return res.status(400).json({
+          success: false,
+          error: 'Restaurant ID e redirect URL são obrigatórios'
+        })
+      }
+
+      const clientId = process.env.FACEBOOK_APP_ID
+      if (!clientId) {
+        return res.status(500).json({
+          success: false,
+          error: 'Facebook App ID não configurado'
+        })
+      }
+
+      // Construir o state com dados do restaurante e URL de redirecionamento
+      const state = encodeURIComponent(JSON.stringify({
+        restaurantId,
+        redirectUrl,
+        timestamp: Date.now()
+      }))
+
+      // Construir URL de autorização OAuth
+      const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(process.env.BACKEND_URL || 'http://localhost:3001')}/api/whatsapp/oauth/callback&scope=whatsapp_business_management,whatsapp_business_messaging&state=${state}`
+
+      res.json({
+        success: true,
+        authUrl
+      })
+    } catch (error) {
+      console.error('Erro ao iniciar OAuth:', error)
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor'
+      })
+    }
+  }
+
+  /**
+   * @swagger
+   * /api/whatsapp/oauth/callback:
+   *   get:
+   *     summary: Callback OAuth do WhatsApp
+   *     tags: [WhatsApp]
+   *     parameters:
+   *       - in: query
+   *         name: code
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Código de autorização
+   *       - in: query
+   *         name: state
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Estado da requisição
+   *     responses:
+   *       200:
+   *         description: Autorização processada
+   *       400:
+   *         description: Dados inválidos
+   *       500:
+   *         description: Erro interno do servidor
+   */
+  static async handleOAuthCallback(req: Request, res: Response) {
+    try {
+      const { code, state } = req.query
+
+      if (!code || !state) {
+        return res.status(400).json({
+          success: false,
+          error: 'Código e estado são obrigatórios'
+        })
+      }
+
+      // Decodificar o state
+      let stateData
+      try {
+        stateData = JSON.parse(decodeURIComponent(state as string))
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Estado inválido'
+        })
+      }
+
+      const { restaurantId, redirectUrl } = stateData
+
+      if (!restaurantId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Restaurant ID não encontrado no estado'
+        })
+      }
+
+      // Trocar código por token curto
+      const shortToken = await this.exchangeCodeForShortToken(code as string)
+      if (!shortToken) {
+        return res.status(500).json({
+          success: false,
+          error: 'Falha ao trocar código por token'
+        })
+      }
+
+      // Trocar token curto por long-lived
+      const longLivedToken = await this.exchangeShortTokenForLongLived(shortToken)
+      if (!longLivedToken) {
+        return res.status(500).json({
+          success: false,
+          error: 'Falha ao trocar token curto por long-lived'
+        })
+      }
+
+      // Obter informações da conta de negócio
+      const businessAccounts = await this.getBusinessAccounts(longLivedToken)
+      if (!businessAccounts || businessAccounts.length === 0) {
+        return res.status(500).json({
+          success: false,
+          error: 'Nenhuma conta de negócio encontrada'
+        })
+      }
+
+      const businessAccount = businessAccounts[0]
+
+      // Obter números de telefone
+      const phoneNumbers = await this.getPhoneNumbers(businessAccount.id, longLivedToken)
+      if (!phoneNumbers || phoneNumbers.length === 0) {
+        return res.status(500).json({
+          success: false,
+          error: 'Nenhum número de telefone encontrado'
+        })
+      }
+
+      const phoneNumber = phoneNumbers[0]
+
+      // Salvar integração
+      const integration = await WhatsAppService.saveIntegration(restaurantId, {
+        phone_number_id: phoneNumber.id,
+        business_account_id: businessAccount.id,
+        access_token: longLivedToken
+      })
+
+      // Salvar token
+      await WhatsAppService.saveToken({
+        business_id: businessAccount.id,
+        access_token: longLivedToken,
+        refresh_token: '', // Facebook não fornece refresh tokens
+        expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() // 60 dias
+      })
+
+      // Redirecionar baseado na URL de redirecionamento
+      if (redirectUrl && redirectUrl.includes('localhost')) {
+        // Frontend local
+        const successUrl = `${redirectUrl}?success=true&restaurantId=${restaurantId}&businessAccountId=${businessAccount.id}&phoneNumberId=${phoneNumber.id}`
+        res.redirect(successUrl)
+      } else {
+        // n8n ou outro sistema
+        res.json({
+          success: true,
+          data: {
+            integration,
+            businessAccount,
+            phoneNumber,
+            accessToken: longLivedToken
+          },
+          message: 'OAuth processado com sucesso'
+        })
+      }
+
+    } catch (error) {
+      console.error('Erro no callback OAuth:', error)
+      res.status(500).json({
+        success: false,
+        error: 'Erro interno do servidor'
+      })
+    }
+  }
+
+  /**
+   * Troca o código de autorização por um token de acesso curto
+   */
+  private static async exchangeCodeForShortToken(code: string): Promise<string | null> {
+    try {
+      const clientId = process.env.FACEBOOK_APP_ID
+      const clientSecret = process.env.FACEBOOK_APP_SECRET
+      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
+
+      const response = await axios.get<TokenResponse>('https://graph.facebook.com/v20.0/oauth/access_token', {
+        params: {
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          client_secret: clientSecret,
+          code: code
+        }
+      })
+
+      const { access_token } = response.data
+      return access_token
+    } catch (error) {
+      console.error('Erro ao trocar código por token curto:', error)
+      return null
+    }
+  }
+
+  /**
+   * Troca o token curto por um token long-lived
+   */
+  private static async exchangeShortTokenForLongLived(shortToken: string): Promise<string | null> {
+    try {
+      const clientId = process.env.FACEBOOK_APP_ID
+      const clientSecret = process.env.FACEBOOK_APP_SECRET
+
+      const response = await axios.get<TokenResponse>('https://graph.facebook.com/v20.0/oauth/access_token', {
+        params: {
+          grant_type: 'fb_exchange_token',
+          client_id: clientId,
+          client_secret: clientSecret,
+          fb_exchange_token: shortToken
+        }
+      })
+
+      const { access_token } = response.data
+      return access_token
+    } catch (error) {
+      console.error('Erro ao trocar token curto por long-lived:', error)
+      return null
+    }
+  }
+
+  /**
+   * Obtém as contas de negócio do usuário
+   */
+  static async getBusinessAccounts(accessToken: string): Promise<any[]> {
+    try {
+      const response = await axios.get<BusinessAccountsResponse>('https://graph.facebook.com/v20.0/me/businesses', {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      return response.data.data || []
+    } catch (error) {
+      console.error('Erro ao buscar contas de negócio:', error)
+      return []
+    }
+  }
+
+  /**
+   * Obtém os números de telefone de uma conta de negócio
+   */
+  static async getPhoneNumbers(businessAccountId: string, accessToken: string): Promise<any[]> {
+    try {
+      const response = await axios.get<PhoneNumbersResponse>(
+        `https://graph.facebook.com/v20.0/${businessAccountId}/phone_numbers`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      )
+
+      return response.data.data || []
+    } catch (error) {
+      console.error('Erro ao buscar números de telefone:', error)
+      return []
+    }
+  }
+
+  /**
+   * Desvincula o WhatsApp do restaurante
+   */
+  static async disconnectWhatsApp(restaurantId: string) {
+    try {
+      // Buscar integração atual
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      if (!integration) {
+        throw new Error('Integração WhatsApp não encontrada')
+      }
+
+      // Buscar token associado
+      const token = await WhatsAppService.getToken(integration.business_account_id)
+      
+      // Deletar integração
+      await WhatsAppService.deleteIntegration(restaurantId)
+      
+      // Deletar token se existir
+      if (token) {
+        await supabase
+          .from('whatsapp_tokens')
+          .delete()
+          .eq('business_id', integration.business_account_id)
+      }
+
+      // Limpar dados relacionados
+      await supabase
+        .from('whatsapp_contacts')
+        .delete()
+        .eq('restaurant_id', restaurantId)
+
+      await supabase
+        .from('whatsapp_messages')
+        .delete()
+        .eq('restaurant_id', restaurantId)
+
+      await supabase
+        .from('whatsapp_media')
+        .delete()
+        .eq('restaurant_id', restaurantId)
+
+      return {
+        success: true,
+        message: 'WhatsApp desvinculado com sucesso',
+        disconnectedAt: new Date().toISOString()
+      }
+    } catch (error) {
+      console.error('Erro ao desvincular WhatsApp:', error)
+      throw new Error('Falha ao desvincular WhatsApp')
+    }
+  }
+
+  /**
+   * Obtém o status da integração WhatsApp
+   */
+  static async getWhatsAppStatus(restaurantId: string) {
+    try {
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      
+      if (!integration) {
+        return {
+          isConnected: false,
+          integration: null,
+          lastConnected: null,
+          message: 'WhatsApp não conectado'
+        }
+      }
+
+      // Verificar se o token ainda é válido
+      const isTokenValid = await this.validateToken(restaurantId)
+      
+      return {
+        isConnected: isTokenValid,
+        integration: {
+          id: integration.id,
+          phone_number_id: integration.phone_number_id,
+          business_account_id: integration.business_account_id,
+          is_active: integration.is_active,
+          created_at: integration.created_at,
+          updated_at: integration.updated_at
+        },
+        lastConnected: integration.updated_at,
+        message: isTokenValid ? 'WhatsApp conectado e funcionando' : 'Token expirado ou inválido'
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status do WhatsApp:', error)
+      return {
+        isConnected: false,
+        integration: null,
+        lastConnected: null,
+        message: 'Erro ao verificar status'
+      }
+    }
+  }
+
   static async getBusinessAccounts(req: Request, res: Response) {
     try {
       const { accessToken } = req.body
@@ -794,138 +1225,6 @@ export class WhatsAppController {
     }
   }
 
-  static async exchangeCodeForToken(code: string, restaurantId: string) {
-    try {
-      const clientId = process.env.FACEBOOK_APP_ID
-      const clientSecret = process.env.FACEBOOK_APP_SECRET
-      const redirectUri = `${process.env.BASE_URL || 'http://localhost:5173'}/whatsapp/callback`
-
-      // Exchange code for access token
-      const tokenResponse = await axios.post('https://graph.facebook.com/v19.0/oauth/access_token', {
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        client_secret: clientSecret,
-        code: code
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      })
-
-      const tokenData = tokenResponse.data as any
-      const { access_token, token_type, expires_in } = tokenData
-
-      // Get business accounts
-      const accountsResponse = await axios.get(`https://graph.facebook.com/v19.0/me/businesses`, {
-        headers: {
-          'Authorization': `Bearer ${access_token}`
-        }
-      })
-
-      const accountsData = accountsResponse.data as any
-      const businessAccount = accountsData.data[0]
-      if (!businessAccount) {
-        throw new Error('Nenhuma conta de negócio encontrada')
-      }
-
-      // Get phone numbers
-      const phoneNumbersResponse = await axios.get(
-        `https://graph.facebook.com/v19.0/${businessAccount.id}/phone_numbers`,
-        {
-          headers: {
-            'Authorization': `Bearer ${access_token}`
-          }
-        }
-      )
-
-      const phoneNumbersData = phoneNumbersResponse.data as any
-      const phoneNumber = phoneNumbersData.data[0]
-      if (!phoneNumber) {
-        throw new Error('Nenhum número de telefone encontrado')
-      }
-
-      // Save integration
-      const integration = await WhatsAppService.saveIntegration(restaurantId, {
-        phone_number_id: phoneNumber.id,
-        business_account_id: businessAccount.id,
-        access_token: access_token
-      })
-
-      // Save token
-      await WhatsAppService.saveToken({
-        business_id: businessAccount.id,
-        access_token: access_token,
-        refresh_token: '', // Facebook doesn't provide refresh tokens
-        expires_at: new Date(Date.now() + (expires_in || 3600) * 1000).toISOString()
-      })
-
-      return {
-        success: true,
-        data: {
-          integration,
-          businessAccount,
-          phoneNumber
-        }
-      }
-
-    } catch (error) {
-      throw new Error(`Erro na troca do código: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
-    }
-  }
-
-  static async validateToken(restaurantId: string): Promise<boolean> {
-    try {
-      // Get integration
-      const integration = await WhatsAppService.getIntegration(restaurantId)
-      if (!integration) {
-        return false
-      }
-
-      // Get valid access token
-      const accessToken = await WhatsAppService.getValidAccessToken(integration.business_account_id)
-      if (!accessToken) {
-        return false
-      }
-
-      // Test token by making a simple API call
-      const testResponse = await axios.get(`https://graph.facebook.com/v19.0/me`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      })
-
-      return testResponse.status === 200
-    } catch (error) {
-      console.error('Erro ao validar token:', error)
-      return false
-    }
-  }
-
-  static async processOAuthCallback(code: string, state: string) {
-    try {
-      // Decode state to get restaurant ID and redirect URL
-      const stateData = JSON.parse(decodeURIComponent(state))
-      const { restaurantId, redirectUrl } = stateData
-
-      if (!restaurantId) {
-        throw new Error('Restaurant ID não encontrado no state')
-      }
-
-      // Exchange code for token (reuse existing logic)
-      const result = await this.exchangeCodeForToken(code, restaurantId)
-
-      return {
-        success: true,
-        restaurantId,
-        redirectUrl,
-        data: result
-      }
-
-    } catch (error) {
-      throw new Error(`Erro ao processar callback: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
-    }
-  }
-
   static async updateBusinessProfile(req: Request, res: Response) {
     try {
       const { restaurantId, profile } = req.body
@@ -1003,6 +1302,34 @@ export class WhatsAppController {
     } catch (error) {
       console.error('Erro ao registrar template:', error)
       res.status(500).json({ success: false, error: 'Erro interno do servidor' })
+    }
+  }
+
+  static async validateToken(restaurantId: string): Promise<boolean> {
+    try {
+      // Get integration
+      const integration = await WhatsAppService.getIntegration(restaurantId)
+      if (!integration) {
+        return false
+      }
+
+      // Get valid access token
+      const accessToken = await WhatsAppService.getValidAccessToken(integration.business_account_id)
+      if (!accessToken) {
+        return false
+      }
+
+      // Test token by making a simple API call
+      const testResponse = await axios.get(`https://graph.facebook.com/v20.0/me`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+
+      return testResponse.status === 200
+    } catch (error) {
+      console.error('Erro ao validar token:', error)
+      return false
     }
   }
 } 
