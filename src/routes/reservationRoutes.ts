@@ -39,7 +39,7 @@ const router = Router();
  *         start_time:
  *           type: string
  *           pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
- *           description: Reservation start time (HH:MM)
+ *           description: "Reservation start time (HH:MM)"
  *         table_id:
  *           type: string
  *           format: uuid

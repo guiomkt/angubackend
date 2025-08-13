@@ -406,7 +406,7 @@ router.post('/send-message', authenticateToken, validate(sendMessageSchema), Wha
  *                 description: Nome do template
  *               language:
  *                 type: string
- *                 description: Código do idioma (padrão: pt_BR)
+ *                 description: "Código do idioma (padrão: pt_BR)"
  *               components:
  *                 type: array
  *                 description: Componentes do template
