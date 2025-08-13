@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
+// import rateLimit from 'express-rate-limit'; // DESABILITADO TEMPORARIAMENTE
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import dotenv from 'dotenv';
@@ -306,15 +306,24 @@ const swaggerOptions = {
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    error: 'Too many requests from this IP, please try again later.'
-  }
-});
+// ⚠️ RATE LIMITING DESABILITADO TEMPORARIAMENTE ⚠️
+// 
+// MOTIVO: Durante o desenvolvimento, o frontend faz muitas requisições simultâneas
+// que estavam causando erros 429 (Too Many Requests). Para resolver:
+//
+// 1. Desabilitei o rate limiting temporariamente
+// 2. O sistema agora aceita todas as requisições sem limitação
+// 3. ATENÇÃO: Reative antes de ir para produção!
+//
+// Para reativar, descomente as linhas abaixo:
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000, // 15 minutes
+//   max: 100, // limit each IP to 100 requests per windowMs
+//   message: {
+//     success: false,
+//     error: 'Too many requests from this IP, please try again later.'
+//   }
+// });
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -345,7 +354,7 @@ app.use(cors(corsOptions));
 app.use(helmet());
 app.use(compression());
 app.use(morgan('combined'));
-app.use(limiter);
+// app.use(limiter); // ⚠️ Rate limiting desabilitado temporariamente - reative antes da produção!
 
 // Health check endpoint
 app.get('/health', (req, res) => {
