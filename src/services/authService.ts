@@ -395,7 +395,7 @@ export class AuthService {
 
       // Gerar URL de autorização
       const clientId = process.env.FACEBOOK_APP_ID;
-      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
       
       const params = new URLSearchParams({
         client_id: clientId!,
@@ -421,7 +421,7 @@ export class AuthService {
   private static generateAuthUrl(userId: string, restaurantId: string): string {
     const clientId = process.env.FACEBOOK_APP_ID;
     // IMPORTANTE: O redirect_uri deve ser a URL do backend, não do frontend
-    const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+    const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
     
     const stateData = {
       userId,
@@ -469,7 +469,7 @@ export class AuthService {
       // Trocar code por short-lived token
       const clientId = process.env.FACEBOOK_APP_ID;
       const clientSecret = process.env.FACEBOOK_APP_SECRET;
-      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
+      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
 
       const tokenResponse = await fetch('https://graph.facebook.com/v20.0/oauth/access_token', {
         method: 'POST',

@@ -99,7 +99,8 @@ export class WhatsAppController {
       }))
 
       // Construir URL de autorização OAuth
-      const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(process.env.BACKEND_URL || 'http://localhost:3001')}/api/whatsapp/oauth/callback&scope=whatsapp_business_management,whatsapp_business_messaging&state=${state}`
+      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`;
+      const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=whatsapp_business_management,whatsapp_business_messaging&state=${state}`
 
 return res.json({
         success: true,
@@ -228,8 +229,8 @@ return res.status(500).json({
       })
 
       // Redirecionar baseado na URL de redirecionamento
-      if (redirectUrl && redirectUrl.includes('localhost')) {
-        // Frontend local
+      if (redirectUrl && (redirectUrl.includes('localhost') || redirectUrl.includes(process.env.FRONTEND_URL || 'localhost'))) {
+        // Frontend local ou de desenvolvimento
         const successUrl = `${redirectUrl}?success=true&restaurantId=${restaurantId}&businessAccountId=${businessAccount.id}&phoneNumberId=${phoneNumber.id}`
         return res.redirect(successUrl)
       } else {
@@ -262,7 +263,7 @@ return res.status(500).json({
     try {
       const clientId = process.env.FACEBOOK_APP_ID
       const clientSecret = process.env.FACEBOOK_APP_SECRET
-      const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
+      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
 
       const response = await axios.get<TokenResponse>('https://graph.facebook.com/v20.0/oauth/access_token', {
         params: {

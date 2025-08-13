@@ -341,8 +341,8 @@ export class AuthController {
       const stateData = JSON.parse(decodeURIComponent(state as string));
       const redirectUrl = stateData.redirectUrl;
       
-      if (redirectUrl.includes('localhost')) {
-        // Frontend local
+      if (redirectUrl.includes('localhost') || redirectUrl.includes(process.env.FRONTEND_URL || 'localhost')) {
+        // Frontend local ou de desenvolvimento
         return res.redirect(`${redirectUrl}?code=${code}&state=${state}`)
       } else {
         // n8n ou outro sistema
