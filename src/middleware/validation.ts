@@ -37,7 +37,8 @@ export const areaSchema = Joi.object({
   description: Joi.string().optional().max(500),
   max_capacity: Joi.number().integer().min(1).optional(),
   max_tables: Joi.number().integer().min(1).required(),
-  is_active: Joi.boolean().default(true)
+  is_active: Joi.boolean().default(true),
+  order: Joi.number().integer().min(0).optional()
 });
 
 export const areaUpdateSchema = Joi.object({
@@ -45,7 +46,8 @@ export const areaUpdateSchema = Joi.object({
   description: Joi.string().max(500).optional(),
   max_capacity: Joi.number().integer().min(1).optional(),
   max_tables: Joi.number().integer().min(1).optional(),
-  is_active: Joi.boolean().optional()
+  is_active: Joi.boolean().optional(),
+  order: Joi.number().integer().min(0).optional()
 });
 
 export const tableSchema = Joi.object({
@@ -77,7 +79,7 @@ export const tableUpdateSchema = Joi.object({
 
 export const tableStatusSchema = Joi.object({
   status: Joi.string().valid('available', 'occupied', 'reserved', 'blocked').required(),
-  notes: Joi.string().optional().max(500),
+  notes: Joi.string().optional().allow('').max(500),
   changedBy: Joi.string().optional()
 });
 

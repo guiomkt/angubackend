@@ -1,0 +1,642 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.ai_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid UNIQUE,
+  personality text NOT NULL DEFAULT 'friendly'::text,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT ai_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT ai_settings_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.bloqued_dates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  area_id uuid,
+  reason text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone,
+  init_date date,
+  end_date date,
+  restaurant_id uuid,
+  CONSTRAINT bloqued_dates_pkey PRIMARY KEY (id),
+  CONSTRAINT bloqued_dates_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
+  CONSTRAINT bloqued_dates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.chat_analytics (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  date date NOT NULL,
+  total_conversations integer DEFAULT 0,
+  new_conversations integer DEFAULT 0,
+  ai_handled_conversations integer DEFAULT 0,
+  human_handled_conversations integer DEFAULT 0,
+  avg_response_time double precision DEFAULT 0,
+  avg_resolution_time double precision DEFAULT 0,
+  popular_topics jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT chat_analytics_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_analytics_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.chat_contacts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  phone_number text NOT NULL,
+  name text NOT NULL,
+  profile_image_url text,
+  status text NOT NULL DEFAULT 'new'::text,
+  customer_type text NOT NULL DEFAULT 'new'::text,
+  last_message_at timestamp with time zone DEFAULT now(),
+  unread_count integer DEFAULT 0,
+  tags ARRAY DEFAULT '{}'::text[],
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  thread_id text,
+  ai_enable boolean DEFAULT true,
+  CONSTRAINT chat_contacts_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_contacts_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.chat_conversations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  contact_id uuid,
+  status text NOT NULL DEFAULT 'open'::text,
+  intent text NOT NULL DEFAULT 'general'::text,
+  sentiment text NOT NULL DEFAULT 'neutral'::text,
+  ai_enabled boolean DEFAULT true,
+  assigned_to uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT chat_conversations_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT chat_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.chat_contacts(id)
+);
+CREATE TABLE public.chat_messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  sender_type text NOT NULL,
+  sender_id uuid,
+  content text NOT NULL,
+  content_type text NOT NULL DEFAULT 'text'::text,
+  media_url text,
+  is_read boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  restaurant_id uuid NOT NULL,
+  status text DEFAULT 'open'::text,
+  intent text DEFAULT 'general'::text,
+  sentiment text DEFAULT 'neutral'::text,
+  ai_enabled boolean DEFAULT true,
+  assigned_to uuid,
+  CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_messages_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.chat_templates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  name text NOT NULL,
+  content text NOT NULL,
+  category text NOT NULL DEFAULT 'general'::text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  status text NOT NULL DEFAULT 'PENDING'::text,
+  template_message_id character varying,
+  reject_description character varying,
+  CONSTRAINT chat_templates_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_templates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.crm_card_activities (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  card_id uuid,
+  activity_type text NOT NULL,
+  description text NOT NULL,
+  performed_by uuid,
+  performed_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT crm_card_activities_pkey PRIMARY KEY (id),
+  CONSTRAINT crm_card_activities_card_id_fkey FOREIGN KEY (card_id) REFERENCES public.crm_cards(id)
+);
+CREATE TABLE public.crm_card_tag_relations (
+  card_id uuid NOT NULL,
+  tag_id uuid NOT NULL,
+  CONSTRAINT crm_card_tag_relations_pkey PRIMARY KEY (card_id, tag_id),
+  CONSTRAINT crm_card_tag_relations_card_id_fkey FOREIGN KEY (card_id) REFERENCES public.crm_cards(id),
+  CONSTRAINT crm_card_tag_relations_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.crm_card_tags(id)
+);
+CREATE TABLE public.crm_card_tags (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  name text NOT NULL,
+  color text,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT crm_card_tags_pkey PRIMARY KEY (id),
+  CONSTRAINT crm_card_tags_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.crm_cards (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  stage_id uuid,
+  contact_id uuid,
+  title text NOT NULL,
+  description text,
+  priority text DEFAULT 'medium'::text,
+  status text DEFAULT 'active'::text,
+  due_date timestamp with time zone,
+  assigned_to uuid,
+  last_contact_date timestamp with time zone,
+  last_contact_channel text,
+  value numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT crm_cards_pkey PRIMARY KEY (id),
+  CONSTRAINT crm_cards_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT crm_cards_stage_id_fkey FOREIGN KEY (stage_id) REFERENCES public.crm_stages(id),
+  CONSTRAINT crm_cards_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.chat_contacts(id)
+);
+CREATE TABLE public.crm_stages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  name text NOT NULL,
+  description text,
+  color text,
+  icon text,
+  order integer NOT NULL,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT crm_stages_pkey PRIMARY KEY (id),
+  CONSTRAINT crm_stages_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.experience_bonifications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text,
+  description text,
+  rules text,
+  observation text,
+  status boolean DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  restaurant_id uuid,
+  CONSTRAINT experience_bonifications_pkey PRIMARY KEY (id),
+  CONSTRAINT experience_bonifications_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.experience_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying,
+  init_date timestamp without time zone,
+  end_date timestamp without time zone,
+  day_recurrence json,
+  description character varying,
+  restaurant_id uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  link_event text,
+  rules text,
+  recurrence_type USER-DEFINED,
+  code text,
+  observation text,
+  init_time time without time zone,
+  end_time time without time zone,
+  percentage_discount text,
+  CONSTRAINT experience_events_pkey PRIMARY KEY (id),
+  CONSTRAINT experience_events_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.experience_events_exclusives (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text,
+  rules text,
+  observation text,
+  description text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  restaurant_id uuid,
+  updated_at timestamp with time zone,
+  status boolean DEFAULT true,
+  CONSTRAINT experience_events_exclusives_pkey PRIMARY KEY (id),
+  CONSTRAINT experience_events_exclusives_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.logs_clean_waiting_list (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  execution_date timestamp without time zone,
+  status text,
+  qtd_register integer,
+  erro text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT logs_clean_waiting_list_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.menu_categories (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  name text NOT NULL,
+  description text,
+  order integer,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT menu_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT menu_categories_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.menu_items (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  category_id uuid,
+  name text NOT NULL,
+  description text,
+  price numeric NOT NULL,
+  image_url text,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT menu_items_pkey PRIMARY KEY (id),
+  CONSTRAINT menu_items_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT menu_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.menu_categories(id)
+);
+CREATE TABLE public.meta_tokens (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  restaurant_id uuid NOT NULL,
+  access_token text NOT NULL,
+  token_type text NOT NULL DEFAULT 'user'::text,
+  expires_at timestamp with time zone NOT NULL,
+  business_accounts jsonb DEFAULT '[]'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT meta_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT meta_tokens_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT meta_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.n8n_chat_histories (
+  id integer NOT NULL DEFAULT nextval('n8n_chat_histories_id_seq'::regclass),
+  session_id character varying NOT NULL,
+  message jsonb NOT NULL,
+  CONSTRAINT n8n_chat_histories_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.notification_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid UNIQUE,
+  settings jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notification_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT notification_settings_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.onboarding_steps (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  step_name text NOT NULL,
+  step_number integer NOT NULL,
+  is_completed boolean DEFAULT false,
+  completed_at timestamp with time zone,
+  data_collected jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT onboarding_steps_pkey PRIMARY KEY (id),
+  CONSTRAINT onboarding_steps_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.reservation_experiences (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  bonification_id uuid,
+  event_id uuid,
+  event_exclusive_id uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  reservation_id uuid,
+  CONSTRAINT reservation_experiences_pkey PRIMARY KEY (id),
+  CONSTRAINT reservatiom_experience_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.experience_events(id),
+  CONSTRAINT reservatiom_experience_event_exclusive_id_fkey FOREIGN KEY (event_exclusive_id) REFERENCES public.experience_events_exclusives(id),
+  CONSTRAINT reservatiom_experience_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT reservatiom_experience_bonification_id_fkey FOREIGN KEY (bonification_id) REFERENCES public.experience_bonifications(id),
+  CONSTRAINT reservation_experiences_reservation_id_fkey FOREIGN KEY (reservation_id) REFERENCES public.reservations(id)
+);
+CREATE TABLE public.reservations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  customer_name text NOT NULL,
+  phone text,
+  number_of_people integer NOT NULL DEFAULT 1,
+  reservation_date date NOT NULL,
+  start_time time without time zone NOT NULL,
+  table_id uuid,
+  area_id uuid,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'canceled'::text, 'completed'::text, 'seated'::text])),
+  notes text,
+  restaurant_id uuid NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT reservations_pkey PRIMARY KEY (id),
+  CONSTRAINT reservations_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
+  CONSTRAINT reservations_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id),
+  CONSTRAINT reservations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.restaurant_areas (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  name text NOT NULL,
+  description text,
+  max_capacity integer,
+  is_active boolean DEFAULT true,
+  order integer,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  max_tables integer DEFAULT 0,
+  CONSTRAINT restaurant_areas_pkey PRIMARY KEY (id),
+  CONSTRAINT restaurant_areas_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.restaurants (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  description text,
+  logo_url text,
+  address text,
+  city text,
+  state text,
+  postal_code text,
+  phone text,
+  email text,
+  website text,
+  opening_hours jsonb,
+  max_capacity integer,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  onboarding_completed boolean DEFAULT false,
+  onboarding_step integer DEFAULT 1,
+  user_id uuid UNIQUE,
+  CONSTRAINT restaurants_pkey PRIMARY KEY (id),
+  CONSTRAINT restaurants_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.table_status_history (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  table_id uuid,
+  previous_status text NOT NULL,
+  new_status text NOT NULL,
+  changed_at timestamp with time zone DEFAULT now(),
+  changed_by uuid,
+  notes text,
+  CONSTRAINT table_status_history_pkey PRIMARY KEY (id),
+  CONSTRAINT table_status_history_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id)
+);
+CREATE TABLE public.tables (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  area_id uuid,
+  number integer NOT NULL,
+  name text,
+  capacity integer NOT NULL DEFAULT 2,
+  shape text NOT NULL DEFAULT 'square'::text,
+  width integer NOT NULL DEFAULT 80,
+  height integer NOT NULL DEFAULT 80,
+  position_x integer NOT NULL DEFAULT 0,
+  position_y integer NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'available'::text,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT tables_pkey PRIMARY KEY (id),
+  CONSTRAINT tables_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT tables_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id)
+);
+CREATE TABLE public.users (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name character varying NOT NULL,
+  role character varying NOT NULL DEFAULT 'owner'::character varying,
+  restaurant_id uuid NOT NULL,
+  user_id uuid NOT NULL UNIQUE,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT users_pkey PRIMARY KEY (id),
+  CONSTRAINT users_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.users_profile (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text,
+  role text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  restaurant_id uuid,
+  user_id uuid,
+  created_by uuid,
+  CONSTRAINT users_profile_pkey PRIMARY KEY (id),
+  CONSTRAINT users_profile_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT users_profile_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
+  CONSTRAINT users_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.waiting_list (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  customer_name text NOT NULL,
+  phone_number text NOT NULL,
+  party_size integer NOT NULL DEFAULT 1,
+  queue_number integer NOT NULL,
+  status text NOT NULL DEFAULT 'waiting'::text,
+  priority text NOT NULL DEFAULT 'low'::text,
+  area_preference uuid,
+  estimated_wait_time integer,
+  notification_time timestamp with time zone,
+  notes text,
+  table_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT waiting_list_pkey PRIMARY KEY (id),
+  CONSTRAINT waiting_list_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT waiting_list_area_preference_fkey FOREIGN KEY (area_preference) REFERENCES public.restaurant_areas(id),
+  CONSTRAINT waiting_list_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id)
+);
+CREATE TABLE public.waiting_list_config (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid UNIQUE,
+  auto_notification boolean DEFAULT true,
+  notification_message text DEFAULT 'Olá {{name}}, sua mesa está pronta! Por favor, dirija-se à recepção do restaurante.'::text,
+  default_wait_time integer DEFAULT 15,
+  max_party_size integer DEFAULT 20,
+  enable_customer_form boolean DEFAULT true,
+  customer_form_url text,
+  priority_enabled boolean DEFAULT true,
+  collect_phone boolean DEFAULT true,
+  collect_email boolean DEFAULT false,
+  confirmation_message text DEFAULT 'Olá {{name}}, você foi adicionado à fila de espera! Seu número é {{queue_number}} e o tempo estimado de espera é de {{wait_time}} minutos.'::text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT waiting_list_config_pkey PRIMARY KEY (id),
+  CONSTRAINT waiting_list_config_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.waiting_list_history (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  entry_id uuid,
+  previous_status text NOT NULL,
+  new_status text NOT NULL,
+  changed_at timestamp with time zone DEFAULT now(),
+  changed_by uuid,
+  notes text,
+  CONSTRAINT waiting_list_history_pkey PRIMARY KEY (id),
+  CONSTRAINT waiting_list_history_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT waiting_list_history_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.waiting_list(id)
+);
+CREATE TABLE public.whatsapp_account_info (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  restaurant_id uuid UNIQUE,
+  email character varying,
+  about character varying,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone DEFAULT now(),
+  description character varying,
+  photo_url character varying,
+  website json,
+  address character varying,
+  CONSTRAINT whatsapp_account_info_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_verifications_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_connection_logs (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  restaurant_id uuid,
+  waba_id text,
+  action text,
+  details json,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT whatsapp_connection_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_connection_logs_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_contacts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  phone_number text NOT NULL,
+  name text,
+  email text,
+  profile_picture_url text,
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text, 'blocked'::text])),
+  tags ARRAY DEFAULT '{}'::text[],
+  notes text,
+  last_message_at timestamp with time zone,
+  message_count integer DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_contacts_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_contacts_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_conversations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  contact_id uuid,
+  conversation_id text UNIQUE,
+  status text DEFAULT 'open'::text CHECK (status = ANY (ARRAY['open'::text, 'closed'::text, 'archived'::text])),
+  last_message_at timestamp with time zone DEFAULT now(),
+  message_count integer DEFAULT 0,
+  assigned_to uuid,
+  priority text DEFAULT 'normal'::text CHECK (priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text])),
+  tags ARRAY DEFAULT '{}'::text[],
+  notes text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_conversations_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT whatsapp_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.whatsapp_contacts(id)
+);
+CREATE TABLE public.whatsapp_credentials (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  restaurant_id uuid DEFAULT gen_random_uuid() UNIQUE,
+  phone_number character varying,
+  phone_number_id character varying,
+  business_name character varying,
+  status character varying,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp without time zone DEFAULT now(),
+  whatsapp_business_account_id text,
+  message_template_namespace boolean DEFAULT false,
+  access_token text,
+  webhook_status text,
+  disconnected_at timestamp without time zone,
+  disconnect_reason text,
+  oauth_access_token text,
+  oauth_token_expires_at timestamp with time zone,
+  oauth_refresh_token text,
+  oauth_token_type text DEFAULT 'long_lived'::text,
+  is_oauth_connected boolean DEFAULT false,
+  last_oauth_refresh timestamp with time zone,
+  CONSTRAINT whatsapp_credentials_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_credentials_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_integrations (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid,
+  instance_name text NOT NULL,
+  phone_number text,
+  status text DEFAULT 'pending'::text,
+  qr_code_url text,
+  last_connected timestamp with time zone,
+  connection_token text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  phone_number_id text,
+  whatsapp_business_account_id text,
+  business_id text,
+  oauth_access_token text,
+  oauth_token_expires_at timestamp with time zone,
+  oauth_refresh_token text,
+  oauth_token_type text DEFAULT 'long_lived'::text,
+  is_oauth_connected boolean DEFAULT false,
+  last_oauth_refresh timestamp with time zone,
+  business_name text,
+  business_verification_status text,
+  phone_verification_status text,
+  CONSTRAINT whatsapp_integrations_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_integrations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_media (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  media_id text NOT NULL,
+  file_name text NOT NULL,
+  mime_type text NOT NULL,
+  file_size integer NOT NULL,
+  url text,
+  thumbnail_url text,
+  caption text,
+  message_id uuid,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_media_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_media_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.whatsapp_messages(id),
+  CONSTRAINT whatsapp_media_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_messages (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  message_id text NOT NULL,
+  to_phone text NOT NULL,
+  from_phone text NOT NULL,
+  message_type text NOT NULL CHECK (message_type = ANY (ARRAY['text'::text, 'template'::text, 'media'::text, 'location'::text, 'contact'::text, 'interactive'::text])),
+  content jsonb NOT NULL,
+  status text NOT NULL DEFAULT 'sent'::text CHECK (status = ANY (ARRAY['sent'::text, 'delivered'::text, 'read'::text, 'failed'::text, 'pending'::text])),
+  direction text NOT NULL DEFAULT 'outbound'::text CHECK (direction = ANY (ARRAY['inbound'::text, 'outbound'::text])),
+  conversation_id text,
+  reply_to_message_id text,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_messages_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_messages_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_templates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  template_name text NOT NULL,
+  template_id text,
+  category text NOT NULL DEFAULT 'general'::text,
+  language text DEFAULT 'pt_BR'::text,
+  content jsonb NOT NULL,
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
+  rejection_reason text,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_templates_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_templates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);
+CREATE TABLE public.whatsapp_webhooks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  restaurant_id uuid NOT NULL,
+  webhook_url text NOT NULL,
+  verify_token text NOT NULL,
+  is_active boolean DEFAULT true,
+  events ARRAY DEFAULT '{}'::text[],
+  last_triggered timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT whatsapp_webhooks_pkey PRIMARY KEY (id),
+  CONSTRAINT whatsapp_webhooks_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+);

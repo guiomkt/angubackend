@@ -221,6 +221,18 @@ router.get('/blocked-dates', authenticateToken, requireRestaurant, async (req: a
  *               end_date:
  *                 type: string
  *                 format: date
+ *               init_time:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                 description: Horário de início (opcional, se não informado bloqueia o dia inteiro)
+ *               end_time:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                 description: Horário de fim (opcional, se não informado bloqueia o dia inteiro)
+ *               is_full_day:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Se bloqueia o dia inteiro
  *               reason:
  *                 type: string
  *     responses:
@@ -245,7 +257,7 @@ router.get('/blocked-dates', authenticateToken, requireRestaurant, async (req: a
 router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
-    const { area_id, init_date, end_date, reason } = req.body;
+    const { area_id, init_date, end_date, init_time, end_time, reason, is_full_day = true } = req.body;
 
     const { data, error } = await supabase
       .from("bloqued_dates")
@@ -254,7 +266,10 @@ router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: 
         area_id,
         init_date,
         end_date,
-        reason
+        init_time: is_full_day ? null : init_time,
+        end_time: is_full_day ? null : end_time,
+        reason,
+        is_full_day
       }])
       .select()
       .single();
@@ -310,6 +325,18 @@ router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: 
  *               end_date:
  *                 type: string
  *                 format: date
+ *               init_time:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                 description: Horário de início (opcional, se não informado bloqueia o dia inteiro)
+ *               end_time:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                 description: Horário de fim (opcional, se não informado bloqueia o dia inteiro)
+ *               is_full_day:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Se bloqueia o dia inteiro
  *               reason:
  *                 type: string
  *     responses:
@@ -336,7 +363,7 @@ router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: 
 router.put('/blocked-dates/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
-    const { area_id, init_date, end_date, reason } = req.body;
+    const { area_id, init_date, end_date, init_time, end_time, reason, is_full_day = true } = req.body;
 
     const { data, error } = await supabase
       .from("bloqued_dates")
@@ -344,7 +371,10 @@ router.put('/blocked-dates/:id', authenticateToken, requireRestaurant, async (re
         area_id,
         init_date,
         end_date,
+        init_time: is_full_day ? null : init_time,
+        end_time: is_full_day ? null : end_time,
         reason,
+        is_full_day,
         updated_at: new Date().toISOString()
       })
       .eq("id", id)

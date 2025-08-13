@@ -38,6 +38,7 @@ const router = Router();
  *           type: boolean
  *         order:
  *           type: number
+ *           description: Order of the area for display purposes
  *         created_at:
  *           type: string
  *           format: date-time
@@ -62,6 +63,14 @@ router.get('/my', requireRestaurant, async (req: any, res) => {
     }
 
     const areas = await AreaService.getAreasByRestaurant(restaurantId);
+    
+    // Adicionar headers para evitar cache
+    res.set({
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+
     return res.json({
       success: true,
       data: areas

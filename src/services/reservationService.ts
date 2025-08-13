@@ -151,11 +151,12 @@ export class ReservationService {
         const conflict = await this.checkTableConflict(
           reservationData.table_id,
           reservationData.reservation_date,
-          reservationData.start_time
+          reservationData.start_time,
+          reservationData.end_time
         );
         
         if (conflict) {
-          throw createError('Table is already reserved for this time', 409);
+          throw createError('Table is already reserved for this time period', 409);
         }
       }
 
@@ -258,27 +259,114 @@ export class ReservationService {
   private async checkTableConflict(
     tableId: string,
     date: string,
-    time: string
+    startTime: string,
+    endTime?: string
   ): Promise<boolean> {
     try {
-      const { data, error } = await supabase
+      // 1. Verificar conflitos com outras reservas na mesma mesa e data
+      const { data: existingReservations, error: reservationError } = await supabase
         .from('reservations')
-        .select('id')
+        .select('id, start_time, end_time')
         .eq('table_id', tableId)
         .eq('reservation_date', date)
-        .eq('start_time', time)
-        .in('status', ['pending', 'confirmed'])
-        .single();
+        .in('status', ['pending', 'confirmed']);
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+      if (reservationError) {
+        throw reservationError;
       }
 
-      return !!data;
+      // Verificar sobreposição de horários
+      if (existingReservations && existingReservations.length > 0) {
+        for (const reservation of existingReservations) {
+          const existingStart = reservation.start_time;
+          const existingEnd = reservation.end_time || this.addHours(reservation.start_time, 2);
+          
+          const newStart = startTime;
+          const newEnd = endTime || this.addHours(startTime, 2);
+          
+          // Verificar se há sobreposição de horários
+          if (this.hasTimeOverlap(existingStart, existingEnd, newStart, newEnd)) {
+            return true; // Conflito encontrado
+          }
+        }
+      }
+
+      // 2. Verificar se a data/horário está bloqueada para a área da mesa
+      const { data: tableData, error: tableError } = await supabase
+        .from('tables')
+        .select('area_id')
+        .eq('id', tableId)
+        .single();
+
+      if (tableError) {
+        throw tableError;
+      }
+
+      if (tableData?.area_id) {
+        const { data: blockedDates, error: blockedError } = await supabase
+          .from('bloqued_dates')
+          .select('*')
+          .eq('area_id', tableData.area_id)
+          .lte('init_date', date)
+          .gte('end_date', date);
+
+        if (blockedError) {
+          throw blockedError;
+        }
+
+        if (blockedDates && blockedDates.length > 0) {
+          for (const blockedDate of blockedDates) {
+            // Se é bloqueio de dia inteiro, bloquear
+            if (blockedDate.is_full_day) {
+              return true;
+            }
+
+            // Se é bloqueio de horário específico, verificar sobreposição
+            if (blockedDate.init_time && blockedDate.end_time) {
+              const newStart = startTime;
+              const newEnd = endTime || this.addHours(startTime, 2);
+              
+              if (this.hasTimeOverlap(blockedDate.init_time, blockedDate.end_time, newStart, newEnd)) {
+                return true; // Conflito encontrado
+              }
+            }
+          }
+        }
+      }
+
+      return false; // Nenhum conflito encontrado
     } catch (error) {
       console.error('Error checking table conflict:', error);
       return false;
     }
+  }
+
+  // Função auxiliar para adicionar horas a um horário
+  private addHours(time: string, hours: number): string {
+    const [hour, minute] = time.split(':').map(Number);
+    const newHour = (hour + hours) % 24;
+    return `${newHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+  }
+
+  // Função auxiliar para verificar sobreposição de horários
+  private hasTimeOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
+    const s1 = this.timeToMinutes(start1);
+    const e1 = this.timeToMinutes(end1);
+    const s2 = this.timeToMinutes(start2);
+    const e2 = this.timeToMinutes(end2);
+    
+    // Verificar se há sobreposição
+    // Uma reserva se sobrepõe se:
+    // - O início da nova reserva está dentro da reserva existente, OU
+    // - O fim da nova reserva está dentro da reserva existente, OU
+    // - A nova reserva engloba completamente a reserva existente
+    return (s2 < e1 && e2 > s1);
+  }
+
+  // Função auxiliar para converter horário para minutos
+  private timeToMinutes(time: string): number {
+    const [hour, minute] = time.split(':').map(Number);
+    return hour * 60 + minute;
   }
 }
 

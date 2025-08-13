@@ -18,30 +18,26 @@ async function setupDatabase() {
   console.log('🚀 Configurando banco de dados...');
 
   try {
-    // Ler e executar a migração da tabela users
-    const usersMigrationPath = path.join(__dirname, '../supabase/migrations/20250101000000_create_users_table.sql');
-    const usersMigration = fs.readFileSync(usersMigrationPath, 'utf8');
-
-    console.log('📝 Executando migração da tabela users...');
-    const { error: usersError } = await supabase.rpc('exec_sql', { sql: usersMigration });
+    // Executar migração para corrigir dependência circular
+    const migrationPath = path.join(__dirname, '../supabase/migrations/20250101000000_fix_circular_dependency.sql');
     
-    if (usersError) {
-      console.error('❌ Erro ao criar tabela users:', usersError);
-    } else {
-      console.log('✅ Tabela users criada com sucesso');
-    }
-
-    // Verificar se a tabela restaurants existe
-    const { data: restaurantsCheck, error: restaurantsCheckError } = await supabase
-      .from('restaurants')
-      .select('id')
-      .limit(1);
-
-    if (restaurantsCheckError) {
-      console.log('⚠️  Tabela restaurants não encontrada. Criando...');
+    if (fs.existsSync(migrationPath)) {
+      console.log('📝 Executando migração para corrigir dependência circular...');
+      const migration = fs.readFileSync(migrationPath, 'utf8');
       
-      // Criar tabela restaurants se não existir
-      const createRestaurantsTable = `
+      const { error: migrationError } = await supabase.rpc('exec_sql', { sql: migration });
+      
+      if (migrationError) {
+        console.error('❌ Erro ao executar migração:', migrationError);
+      } else {
+        console.log('✅ Migração executada com sucesso');
+      }
+    } else {
+      console.log('⚠️  Arquivo de migração não encontrado, criando estrutura básica...');
+      
+      // Criar estrutura básica se a migração não existir
+      const createBasicStructure = `
+        -- Criar tabela restaurants se não existir
         CREATE TABLE IF NOT EXISTS restaurants (
           id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
           name VARCHAR(100) NOT NULL,
@@ -63,19 +59,28 @@ async function setupDatabase() {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
 
+        -- Criar tabela users se não existir (sem referência circular)
+        CREATE TABLE IF NOT EXISTS users (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          role VARCHAR(50) NOT NULL DEFAULT 'owner',
+          user_id UUID NOT NULL UNIQUE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+
+        -- Criar índices
         CREATE INDEX IF NOT EXISTS idx_restaurants_user_id ON restaurants(user_id);
-        CREATE INDEX IF NOT EXISTS idx_restaurants_email ON restaurants(email);
+        CREATE INDEX IF NOT EXISTS idx_users_user_id ON users(user_id);
       `;
 
-      const { error: restaurantsError } = await supabase.rpc('exec_sql', { sql: createRestaurantsTable });
+      const { error: structureError } = await supabase.rpc('exec_sql', { sql: createBasicStructure });
       
-      if (restaurantsError) {
-        console.error('❌ Erro ao criar tabela restaurants:', restaurantsError);
+      if (structureError) {
+        console.error('❌ Erro ao criar estrutura básica:', structureError);
       } else {
-        console.log('✅ Tabela restaurants criada com sucesso');
+        console.log('✅ Estrutura básica criada com sucesso');
       }
-    } else {
-      console.log('✅ Tabela restaurants já existe');
     }
 
     console.log('🎉 Configuração do banco de dados concluída!');

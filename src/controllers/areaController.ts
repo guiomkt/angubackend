@@ -39,6 +39,14 @@ export class AreaController {
       }
 
       const areas = await AreaService.getAreasByRestaurant(restaurantId);
+      
+      // Adicionar headers para evitar cache
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
       return res.json({
         success: true,
         data: areas
@@ -79,15 +87,39 @@ export class AreaController {
   static async getAreaById(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      
+      if (!id) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Area ID is required' 
+        });
+      }
+
       const area = await AreaService.getAreaById(id);
       
       if (!area) {
-        return res.status(404).json({ error: 'Area not found' });
+        return res.status(404).json({ 
+          success: false,
+          error: 'Area not found' 
+        });
       }
 
-      return res.json(area);
+      // Adicionar headers para evitar cache
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
+      return res.json({
+        success: true,
+        data: area
+      });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 
@@ -132,10 +164,33 @@ export class AreaController {
   static async createArea(req: Request, res: Response) {
     try {
       const areaData = req.body;
+      
+      if (!areaData.restaurant_id || !areaData.name) {
+        return res.status(400).json({
+          success: false,
+          error: 'Restaurant ID and name are required'
+        });
+      }
+
       const area = await AreaService.createArea(areaData);
-      return res.status(201).json(area);
+      
+      // Adicionar headers para evitar cache
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: area,
+        message: 'Area created successfully'
+      });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 
@@ -186,10 +241,32 @@ export class AreaController {
       const { id } = req.params;
       const areaData = req.body;
       
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Area ID is required'
+        });
+      }
+
       const area = await AreaService.updateArea(id, areaData);
-      return res.json(area);
+      
+      // Adicionar headers para evitar cache
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
+      return res.json({
+        success: true,
+        data: area,
+        message: 'Area updated successfully'
+      });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 
@@ -217,13 +294,31 @@ export class AreaController {
   static async deleteArea(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          error: 'Area ID is required'
+        });
+      }
+
       await AreaService.deleteArea(id);
-      return res.status(204).send();
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Area deleted successfully'
+      });
     } catch (error) {
       if (error instanceof Error && error.message.includes('Cannot delete')) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ 
+          success: false,
+          error: error.message 
+        });
       }
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 
@@ -260,13 +355,23 @@ export class AreaController {
       const { restaurantId, areaIds } = req.body;
       
       if (!restaurantId || !areaIds || !Array.isArray(areaIds)) {
-        return res.status(400).json({ error: 'Restaurant ID and area IDs array are required' });
+        return res.status(400).json({ 
+          success: false,
+          error: 'Restaurant ID and area IDs array are required' 
+        });
       }
 
       await AreaService.reorderAreas(restaurantId, areaIds);
-      return res.json({ message: 'Areas reordered successfully' });
+      
+      return res.json({ 
+        success: true,
+        message: 'Areas reordered successfully' 
+      });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 
@@ -294,13 +399,30 @@ export class AreaController {
       const { restaurantId } = req.query;
       
       if (!restaurantId || typeof restaurantId !== 'string') {
-        return res.status(400).json({ error: 'Restaurant ID is required' });
+        return res.status(400).json({ 
+          success: false,
+          error: 'Restaurant ID is required' 
+        });
       }
 
       const stats = await AreaService.getAreaStats(restaurantId);
-      return res.json(stats);
+      
+      // Adicionar headers para evitar cache
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
+
+      return res.json({
+        success: true,
+        data: stats
+      });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+      return res.status(500).json({ 
+        success: false,
+        error: error instanceof Error ? error.message : 'Internal server error' 
+      });
     }
   }
 } 

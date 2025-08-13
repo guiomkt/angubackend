@@ -61,11 +61,11 @@ export class AuthService {
   private static readonly JWT_EXPIRES_IN = '7d';
 
   /**
-   * Realiza login do usuário usando Supabase Auth
+   * Realiza login do usuário
    */
   static async login(email: string, password: string): Promise<LoginResult> {
     try {
-      // Autenticar com Supabase
+      // Autenticar com Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -81,14 +81,43 @@ export class AuthService {
       }
 
       // Buscar dados do restaurante
-      const { data: restaurantData, error: restaurantError } = await supabase
+      let { data: restaurantData, error: restaurantError } = await supabase
         .from('restaurants')
         .select('*')
         .eq('user_id', userId)
         .single();
 
+      // Se não encontrar restaurante, criar um básico para onboarding
       if (restaurantError || !restaurantData) {
-        throw new Error('Restaurante não encontrado');
+        console.log('Restaurante não encontrado, criando para onboarding...');
+        
+        const { data: newRestaurant, error: createError } = await supabase
+          .from('restaurants')
+          .insert({
+            name: 'Meu Restaurante',
+            user_id: userId,
+            description: null,
+            logo_url: null,
+            address: null,
+            city: null,
+            state: null,
+            postal_code: null,
+            phone: null,
+            email: authData.user.email,
+            website: null,
+            opening_hours: null,
+            max_capacity: null,
+            onboarding_completed: false,
+            onboarding_step: 0
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          throw new Error('Erro ao criar restaurante para onboarding');
+        }
+
+        restaurantData = newRestaurant;
       }
 
       // Gerar token JWT
@@ -179,6 +208,20 @@ export class AuthService {
         throw new Error('Erro ao criar restaurante');
       }
 
+      // Criar usuário na tabela users
+      const { error: userInsertError } = await supabase
+        .from('users')
+        .insert({
+          name: data.name,
+          role: 'owner',
+          user_id: userId
+        });
+
+      if (userInsertError) {
+        console.warn('Aviso: Erro ao criar usuário na tabela users:', userInsertError);
+        // Não falhar se não conseguir criar na tabela users, pois o restaurante já foi criado
+      }
+
       // Gerar token JWT
       const token = this.generateToken(userId);
 
@@ -234,14 +277,43 @@ export class AuthService {
           user_id: userId
         };
 
-        const { data: restaurantData, error: restaurantError } = await supabase
+        let { data: restaurantData, error: restaurantError } = await supabase
           .from('restaurants')
           .select('id, onboarding_completed, onboarding_step')
           .eq('user_id', userId)
           .single();
 
+        // Se não encontrar restaurante, criar um básico para onboarding
         if (restaurantError || !restaurantData) {
-          throw new Error('Restaurante não encontrado');
+          console.log('Restaurante não encontrado em getUserProfile, criando para onboarding...');
+          
+          const { data: newRestaurant, error: createError } = await supabase
+            .from('restaurants')
+            .insert({
+              name: 'Meu Restaurante',
+              user_id: userId,
+              description: null,
+              logo_url: null,
+              address: null,
+              city: null,
+              state: null,
+              postal_code: null,
+              phone: null,
+              email: '',
+              website: null,
+              opening_hours: null,
+              max_capacity: null,
+              onboarding_completed: false,
+              onboarding_step: 0
+            })
+            .select('id, onboarding_completed, onboarding_step')
+            .single();
+
+          if (createError) {
+            throw new Error('Erro ao criar restaurante para onboarding');
+          }
+
+          restaurantData = newRestaurant;
         }
 
         return {
@@ -254,14 +326,43 @@ export class AuthService {
         };
       }
 
-      const { data: restaurantData, error: restaurantError } = await supabase
+      let { data: restaurantData, error: restaurantError } = await supabase
         .from('restaurants')
         .select('id, onboarding_completed, onboarding_step')
         .eq('user_id', userId)
         .single();
 
+      // Se não encontrar restaurante, criar um básico para onboarding
       if (restaurantError || !restaurantData) {
-        throw new Error('Restaurante não encontrado');
+        console.log('Restaurante não encontrado em getUserProfile (com userData), criando para onboarding...');
+        
+        const { data: newRestaurant, error: createError } = await supabase
+          .from('restaurants')
+          .insert({
+            name: 'Meu Restaurante',
+            user_id: userId,
+            description: null,
+            logo_url: null,
+            address: null,
+            city: null,
+            state: null,
+            postal_code: null,
+            phone: null,
+            email: userData.email || '',
+            website: null,
+            opening_hours: null,
+            max_capacity: null,
+            onboarding_completed: false,
+            onboarding_step: 0
+          })
+          .select('id, onboarding_completed, onboarding_step')
+          .single();
+
+        if (createError) {
+          throw new Error('Erro ao criar restaurante para onboarding');
+        }
+
+        restaurantData = newRestaurant;
       }
 
       return {
