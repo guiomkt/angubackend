@@ -404,13 +404,20 @@ app.use(compression());
 app.use(morgan('combined'));
 // app.use(limiter); // ⚠️ Rate limiting desabilitado temporariamente - reative antes da produção!
 
-// Health check endpoint
+// Health check endpoint - Otimizado para Railway
 app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'UP' });
+});
+
+// Health check detalhado - Para debugging
+app.get('/health/detailed', (req, res) => {
   res.json({ 
     status: 'OK', 
     app: 'Angu API',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || '3001'
   });
 });
 
@@ -448,7 +455,8 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📚 API Documentation available at https://angubackend-production.up.railway.app/api-docs`);
-  console.log(`🏥 Health check available at https://angubackend-production.up.railway.app/health`);
+  console.log(`🏥 Health check (Railway): https://angubackend-production.up.railway.app/health`);
+  console.log(`🔍 Health check (Detalhado): https://angubackend-production.up.railway.app/health/detailed`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`✅ CORS configurado para: localhost:5173, localhost:3000, cheffguio.com, angubackend-production.up.railway.app`);
 });
