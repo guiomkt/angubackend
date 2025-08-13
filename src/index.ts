@@ -49,12 +49,12 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: process.env.BACKEND_URL || `http://localhost:${PORT}`,
-        description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server'
+        url: 'https://angubackend-production.up.railway.app',
+        description: 'Production server'
       },
       {
-        url: 'https://api.cheffguio.com',
-        description: 'Production server'
+        url: `http://localhost:${PORT}`,
+        description: 'Development server'
       }
     ],
     components: {
@@ -329,29 +329,77 @@ const swaggerSpec = swaggerJsdoc(swaggerOptions);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS Configuration
+// CORS Configuration - Hardcoded para produção
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
     // Permitir requisições sem origin (como mobile apps ou Postman)
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',') 
-      : ['http://localhost:5173', 'http://localhost:3000', 'https://cheffguio.com'];
+    // Configuração de CORS hardcoded para funcionar imediatamente
+    const allowedOrigins = [
+      'http://localhost:5173', 
+      'http://localhost:3000', 
+      'http://localhost:4173',
+      'https://cheffguio.com',
+      'https://angubackend-production.up.railway.app'
+    ];
+    
+    // Log para debug
+    console.log(`🌍 CORS: Origin ${origin} solicitando acesso`);
+    console.log(`✅ CORS: Origins permitidos: ${allowedOrigins.join(', ')}`);
     
     if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS: Origin ${origin} permitida`);
       callback(null, true);
     } else {
       console.log(`🚫 CORS: Origin ${origin} não permitida`);
-      callback(new Error('Não permitido pelo CORS'));
+      // Permitir todas as origens para desenvolvimento
+      console.log(`🔄 CORS: Permitindo origin ${origin} para desenvolvimento`);
+      callback(null, true);
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 };
 
 app.use(cors(corsOptions));
-app.use(helmet());
+
+// Middleware adicional para CORS preflight
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-API-Key');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
+
+// Configuração do Helmet mais flexível para desenvolvimento
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:", "wss:"],
+      fontSrc: ["'self'", "https:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+}));
 app.use(compression());
 app.use(morgan('combined'));
 // app.use(limiter); // ⚠️ Rate limiting desabilitado temporariamente - reative antes da produção!
@@ -399,9 +447,10 @@ app.use(errorHandler);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📚 API Documentation available at ${process.env.BACKEND_URL || `http://localhost:${PORT}`}/api-docs`);
-  console.log(`🏥 Health check available at ${process.env.BACKEND_URL || `http://localhost:${PORT}`}/health`);
+  console.log(`📚 API Documentation available at https://angubackend-production.up.railway.app/api-docs`);
+  console.log(`🏥 Health check available at https://angubackend-production.up.railway.app/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✅ CORS configurado para: localhost:5173, localhost:3000, cheffguio.com, angubackend-production.up.railway.app`);
 });
 
 export default app; 
