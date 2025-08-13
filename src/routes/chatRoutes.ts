@@ -694,7 +694,7 @@ router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (
  *         schema:
  *           type: string
  *           format: date
- *         description: Date to get analytics for (default: today)
+ *         description: "Date to get analytics for (default: today)"
  *     responses:
  *       200:
  *         description: Chat analytics
