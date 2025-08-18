@@ -293,4 +293,69 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
     total: number;
     totalPages: number;
   };
+}
+
+// AI Settings types
+export interface AISettings extends BaseEntity {
+  restaurant_id: string;
+  personality: 'formal' | 'friendly' | 'enthusiastic';
+  settings: {
+    welcome_message?: string;
+    reservation_flow?: string;
+    menu_suggestions?: boolean;
+    customer_service_tone?: string;
+    language?: string;
+    max_response_length?: number;
+    auto_suggestions?: boolean;
+  };
+}
+
+// Notification Settings types
+export interface NotificationSettings extends BaseEntity {
+  restaurant_id: string;
+  settings: {
+    email_notifications?: boolean;
+    sms_notifications?: boolean;
+    whatsapp_notifications?: boolean;
+    push_notifications?: boolean;
+    reservation_confirmation?: boolean;
+    reservation_reminder?: boolean;
+    waiting_list_notification?: boolean;
+    table_ready_notification?: boolean;
+    marketing_notifications?: boolean;
+    notification_timing?: {
+      reservation_reminder_hours?: number;
+      table_ready_delay?: number;
+    };
+  };
+}
+
+// WhatsApp Account Info types
+export interface WhatsAppAccountInfo extends BaseEntity {
+  restaurant_id: string;
+  email?: string;
+  about?: string;
+  description?: string;
+  photo_url?: string;
+  website?: string;
+  address?: string;
+}
+
+// User Profile extended types
+export interface UserProfileExtended extends UserProfile {
+  email?: string;
+  phone?: string;
+  avatar_url?: string;
+  permissions?: string[];
+  is_active?: boolean;
+  last_login?: string;
+}
+
+// Restaurant Settings Response
+export interface RestaurantSettingsResponse {
+  restaurant: Restaurant;
+  ai_settings: AISettings | null;
+  notification_settings: NotificationSettings | null;
+  whatsapp_account_info: WhatsAppAccountInfo | null;
+  users: UserProfileExtended[];
 } 

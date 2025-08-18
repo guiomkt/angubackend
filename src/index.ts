@@ -25,6 +25,7 @@ import uploadRoutes from './routes/uploadRoutes';
 import aiRoutes from './routes/aiRoutes';
 import crmRoutes from './routes/crmRoutes';
 import userRoutes from './routes/userRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -237,6 +238,75 @@ const swaggerOptions = {
             updated_at: { type: 'string', format: 'date-time' }
           }
         },
+        CrmStage: {
+          type: 'object',
+          required: ['id', 'restaurant_id', 'name', 'order', 'is_active'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            restaurant_id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            description: { type: 'string' },
+            color: { type: 'string' },
+            icon: { type: 'string' },
+            order: { type: 'number' },
+            is_active: { type: 'boolean' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' }
+          }
+        },
+        CrmCard: {
+          type: 'object',
+          required: ['id', 'restaurant_id', 'stage_id', 'title', 'priority', 'status'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            restaurant_id: { type: 'string', format: 'uuid' },
+            stage_id: { type: 'string', format: 'uuid' },
+            contact_id: { type: 'string', format: 'uuid' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+            status: { type: 'string', enum: ['active', 'completed', 'archived'] },
+            due_date: { type: 'string', format: 'date-time' },
+            assigned_to: { type: 'string', format: 'uuid' },
+            last_contact_date: { type: 'string', format: 'date-time' },
+            last_contact_channel: { type: 'string' },
+            value: { type: 'number' },
+            created_at: { type: 'string', format: 'date-time' },
+            updated_at: { type: 'string', format: 'date-time' }
+          }
+        },
+        CrmCardTag: {
+          type: 'object',
+          required: ['id', 'restaurant_id', 'name'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            restaurant_id: { type: 'string', format: 'uuid' },
+            name: { type: 'string' },
+            color: { type: 'string' },
+            created_at: { type: 'string', format: 'date-time' }
+          }
+        },
+        CrmCardActivity: {
+          type: 'object',
+          required: ['id', 'card_id', 'activity_type', 'description', 'performed_at'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            card_id: { type: 'string', format: 'uuid' },
+            activity_type: { type: 'string', enum: ['note', 'stage_change', 'contact', 'reservation', 'event'] },
+            description: { type: 'string' },
+            performed_by: { type: 'string', format: 'uuid' },
+            performed_at: { type: 'string', format: 'date-time' }
+          }
+        },
+        CrmCardWithDetails: {
+          allOf: [{ $ref: '#/components/schemas/CrmCard' }],
+          type: 'object',
+          properties: {
+            contact: { $ref: '#/components/schemas/ChatContact' },
+            tags: { type: 'array', items: { $ref: '#/components/schemas/CrmCardTag' } },
+            activities: { type: 'array', items: { $ref: '#/components/schemas/CrmCardActivity' } }
+          }
+        },
         Pagination: {
           type: 'object',
           properties: {
@@ -444,6 +514,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 handler
 app.use(notFound);
