@@ -4,6 +4,34 @@ import { supabase } from '../config/database'
 
 const router = Router()
 
+/**
+ * @swagger
+ * /api/crm/stages:
+ *   get:
+ *     summary: Lista todas as etapas do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de etapas retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/CrmStage'
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+
 // List stages
 router.get('/stages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -20,6 +48,62 @@ router.get('/stages', authenticateToken, requireRestaurant, async (req: Authenti
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/stages:
+ *   post:
+ *     summary: Cria uma nova etapa do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - order
+ *               - is_active
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Nome da etapa
+ *               description:
+ *                 type: string
+ *                 description: Descrição da etapa
+ *               color:
+ *                 type: string
+ *                 description: Cor da etapa (hex)
+ *               icon:
+ *                 type: string
+ *                 description: Ícone da etapa
+ *               order:
+ *                 type: number
+ *                 description: Ordem da etapa
+ *               is_active:
+ *                 type: boolean
+ *                 description: Se a etapa está ativa
+ *     responses:
+ *       201:
+ *         description: Etapa criada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmStage'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Create stage
 router.post('/stages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -33,6 +117,47 @@ router.post('/stages', authenticateToken, requireRestaurant, async (req: Authent
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/stages/{id}:
+ *   put:
+ *     summary: Atualiza uma etapa do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID da etapa
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CrmStage'
+ *     responses:
+ *       200:
+ *         description: Etapa atualizada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmStage'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Update stage
 router.put('/stages/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -50,6 +175,32 @@ router.put('/stages/:id', authenticateToken, requireRestaurant, async (req: Auth
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/stages/{id}:
+ *   delete:
+ *     summary: Remove uma etapa do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID da etapa
+ *     responses:
+ *       200:
+ *         description: Etapa removida com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       409:
+ *         description: Etapa possui cards associados
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Delete stage
 router.delete('/stages/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -69,6 +220,24 @@ router.delete('/stages/:id', authenticateToken, requireRestaurant, async (req: A
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/stages/defaults:
+ *   post:
+ *     summary: Cria etapas padrão do CRM se não existirem
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Etapas padrão já existem
+ *       201:
+ *         description: Etapas padrão criadas com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Create default stages if none
 router.post('/stages/defaults', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -100,6 +269,33 @@ router.post('/stages/defaults', authenticateToken, requireRestaurant, async (req
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/tags:
+ *   get:
+ *     summary: Lista todas as tags do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de tags retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/CrmCardTag'
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // List tags
 router.get('/tags', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -116,6 +312,48 @@ router.get('/tags', authenticateToken, requireRestaurant, async (req: Authentica
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/tags:
+ *   post:
+ *     summary: Cria uma nova tag do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Nome da tag
+ *               color:
+ *                 type: string
+ *                 description: Cor da tag (hex)
+ *     responses:
+ *       201:
+ *         description: Tag criada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmCardTag'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Create tag
 router.post('/tags', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -129,6 +367,30 @@ router.post('/tags', authenticateToken, requireRestaurant, async (req: Authentic
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/tags/{id}:
+ *   delete:
+ *     summary: Remove uma tag do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID da tag
+ *     responses:
+ *       200:
+ *         description: Tag removida com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Delete tag
 router.delete('/tags/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -144,6 +406,33 @@ router.delete('/tags/:id', authenticateToken, requireRestaurant, async (req: Aut
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/cards:
+ *   get:
+ *     summary: Lista todos os cards do CRM com detalhes
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de cards retornada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/CrmCardWithDetails'
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // List cards with details
 router.get('/cards', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -193,6 +482,84 @@ router.get('/cards', authenticateToken, requireRestaurant, async (req: Authentic
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/cards:
+ *   post:
+ *     summary: Cria um novo card do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - stage_id
+ *               - title
+ *               - priority
+ *               - status
+ *             properties:
+ *               stage_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID da etapa do card
+ *               contact_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do contato associado
+ *               title:
+ *                 type: string
+ *                 description: Título do card
+ *               description:
+ *                 type: string
+ *                 description: Descrição do card
+ *               priority:
+ *                 type: string
+ *                 enum: [low, medium, high]
+ *                 description: Prioridade do card
+ *               status:
+ *                 type: string
+ *                 enum: [active, completed, archived]
+ *                 description: Status do card
+ *               due_date:
+ *                 type: string
+ *                 format: date-time
+ *                 description: Data de vencimento
+ *               assigned_to:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do usuário responsável
+ *               value:
+ *                 type: number
+ *                 description: Valor do card
+ *               tag_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: IDs das tags associadas
+ *     responses:
+ *       201:
+ *         description: Card criado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmCard'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Create card
 router.post('/cards', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -217,6 +584,47 @@ router.post('/cards', authenticateToken, requireRestaurant, async (req: Authenti
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/cards/{id}:
+ *   put:
+ *     summary: Atualiza um card do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID do card
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/CrmCard'
+ *     responses:
+ *       200:
+ *         description: Card atualizado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmCard'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Update card
 router.put('/cards/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -245,6 +653,30 @@ router.put('/cards/:id', authenticateToken, requireRestaurant, async (req: Authe
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/cards/{id}:
+ *   delete:
+ *     summary: Remove um card do CRM
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID do card
+ *     responses:
+ *       200:
+ *         description: Card removido com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Delete card
 router.delete('/cards/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
@@ -259,6 +691,62 @@ router.delete('/cards/:id', authenticateToken, requireRestaurant, async (req: Au
   }
 })
 
+/**
+ * @swagger
+ * /api/crm/cards/{id}/activities:
+ *   post:
+ *     summary: Adiciona uma atividade a um card
+ *     tags: [CRM]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID do card
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - activity_type
+ *               - description
+ *             properties:
+ *               activity_type:
+ *                 type: string
+ *                 enum: [note, stage_change, contact, reservation, event]
+ *                 description: Tipo da atividade
+ *               description:
+ *                 type: string
+ *                 description: Descrição da atividade
+ *               performed_by:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do usuário que realizou a atividade
+ *     responses:
+ *       201:
+ *         description: Atividade adicionada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/CrmCardActivity'
+ *       400:
+ *         description: Dados inválidos
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
 // Add activity to card
 router.post('/cards/:id/activities', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {

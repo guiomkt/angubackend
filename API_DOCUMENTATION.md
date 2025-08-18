@@ -1,21 +1,30 @@
-# Cheff Guio Backend API Documentation
+# Cheff Guio API Documentation
+
+## Visão Geral
+
+A API do Cheff Guio é um sistema completo de gerenciamento de restaurantes que oferece funcionalidades para reservas, gestão de mesas, menu, clientes, IA conversacional, WhatsApp e muito mais.
 
 ## Base URL
-- Development: `http://localhost:3001`
-- Production: `https://api.cheffguio.com`
 
-## Authentication
-All protected endpoints require a Bearer token in the Authorization header:
+- **Produção**: `https://angubackend-production.up.railway.app`
+- **Desenvolvimento**: `http://localhost:3001`
+
+## Autenticação
+
+A API utiliza JWT (JSON Web Tokens) para autenticação. Inclua o token no header `Authorization`:
+
 ```
-Authorization: Bearer <your-jwt-token>
+Authorization: Bearer <seu_token_jwt>
 ```
 
-## Endpoints
+## Endpoints Principais
 
-### Authentication
+### 1. Autenticação
 
-#### POST /api/auth/login
-Login with email and password
+#### POST `/api/auth/login`
+Fazer login no sistema.
+
+**Request Body:**
 ```json
 {
   "email": "user@example.com",
@@ -23,325 +32,414 @@ Login with email and password
 }
 ```
 
-#### POST /api/auth/register
-Register new user and restaurant
-```json
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "name": "User Name",
-  "restaurantName": "Restaurant Name",
-  "phone": "(11) 99999-9999"
-}
-```
-
-#### GET /api/auth/me
-Get current user profile and restaurant data
-
-### Restaurants
-
-#### GET /api/restaurants
-Get all restaurants (public)
-
-#### GET /api/restaurants/my
-Get current user's restaurant (authenticated)
-
-#### GET /api/restaurants/user/:userId
-Get restaurant by user ID (public)
-
-#### GET /api/restaurants/:id
-Get restaurant by ID (public)
-
-#### POST /api/restaurants
-Create new restaurant (authenticated)
-```json
-{
-  "name": "Restaurant Name",
-  "description": "Restaurant description",
-  "address": "Restaurant address",
-  "city": "City",
-  "state": "State",
-  "postal_code": "12345-678",
-  "phone": "(11) 99999-9999",
-  "email": "restaurant@example.com",
-  "website": "https://restaurant.com",
-  "max_capacity": 100
-}
-```
-
-#### PUT /api/restaurants/:id
-Update restaurant (authenticated, restaurant owner only)
-
-#### DELETE /api/restaurants/:id
-Delete restaurant (authenticated, restaurant owner only)
-
-### Reservations
-
-#### GET /api/reservations
-Get reservations for current restaurant with pagination and filters
-- Query params: `page`, `limit`, `date`, `status`, `area_id`, `table_id`
-
-#### GET /api/reservations/today
-Get today's reservations for current restaurant
-
-#### GET /api/reservations/upcoming
-Get upcoming reservations for current restaurant
-- Query params: `days` (default: 7)
-
-#### GET /api/reservations/:id
-Get reservation by ID
-
-#### POST /api/reservations
-Create new reservation (authenticated, restaurant access required)
-```json
-{
-  "customer_name": "Customer Name",
-  "phone": "(11) 99999-9999",
-  "number_of_people": 4,
-  "reservation_date": "2025-01-15",
-  "start_time": "19:00",
-  "table_id": "uuid",
-  "area_id": "uuid",
-  "status": "pending",
-  "notes": "Special requests"
-}
-```
-
-#### PUT /api/reservations/:id
-Update reservation
-
-#### DELETE /api/reservations/:id
-Delete reservation
-
-#### PATCH /api/reservations/:id/status
-Update reservation status
-```json
-{
-  "status": "confirmed"
-}
-```
-
-### Areas
-
-#### GET /api/areas
-Get areas for current restaurant (authenticated)
-
-#### POST /api/areas
-Create new area (authenticated, restaurant access required)
-```json
-{
-  "name": "Area Name",
-  "description": "Area description",
-  "max_capacity": 50,
-  "max_tables": 10
-}
-```
-
-#### PUT /api/areas/:id
-Update area
-
-#### DELETE /api/areas/:id
-Delete area
-
-### Tables
-
-#### GET /api/tables
-Get tables for current restaurant (authenticated)
-
-#### POST /api/tables
-Create new table (authenticated, restaurant access required)
-```json
-{
-  "area_id": "uuid",
-  "number": 1,
-  "name": "Table 1",
-  "capacity": 4,
-  "shape": "round",
-  "width": 100,
-  "height": 100,
-  "position_x": 0,
-  "position_y": 0
-}
-```
-
-#### PUT /api/tables/:id
-Update table
-
-#### DELETE /api/tables/:id
-Delete table
-
-#### PATCH /api/tables/:id/status
-Update table status
-```json
-{
-  "status": "occupied"
-}
-```
-
-### Menu
-
-#### GET /api/menu/categories
-Get menu categories for current restaurant
-
-#### POST /api/menu/categories
-Create menu category
-```json
-{
-  "name": "Category Name",
-  "description": "Category description"
-}
-```
-
-#### PUT /api/menu/categories/:id
-Update menu category
-
-#### DELETE /api/menu/categories/:id
-Delete menu category
-
-#### GET /api/menu/items
-Get menu items for current restaurant
-
-#### POST /api/menu/items
-Create menu item
-```json
-{
-  "category_id": "uuid",
-  "name": "Item Name",
-  "description": "Item description",
-  "price": 25.90
-}
-```
-
-#### PUT /api/menu/items/:id
-Update menu item
-
-#### DELETE /api/menu/items/:id
-Delete menu item
-
-### Waiting Lists
-
-#### GET /api/waiting-lists
-Get waiting list entries for current restaurant
-- Query params: `status` (optional)
-
-### Customers
-
-#### GET /api/customers
-Get all customers for current restaurant with pagination and filters
-- Query params: `page`, `limit`, `search`, `status`, `customer_type`
-- Authentication required
-
-#### GET /api/customers/stats
-Get customer statistics for current restaurant
-- Authentication required
-
-#### GET /api/customers/:id
-Get customer by ID
-- Authentication required
-
-#### POST /api/customers
-Create new customer
-- Authentication required
-```json
-{
-  "name": "Customer Name",
-  "phone_number": "(11) 99999-9999",
-  "profile_image_url": "https://example.com/image.jpg",
-  "status": "new",
-  "customer_type": "new",
-  "tags": ["vip", "returning"],
-  "notes": "Special customer notes",
-  "ai_enable": true
-}
-```
-
-#### PUT /api/customers/:id
-Update customer
-- Authentication required
-
-#### DELETE /api/customers/:id
-Delete customer
-- Authentication required
-
-#### PATCH /api/customers/:id/status
-Update customer status
-- Authentication required
-```json
-{
-  "status": "active"
-}
-```
-
-### Experience Events
-
-#### GET /api/experience/events
-Get experience events for current restaurant
-Returns:
-```json
-{
-  "bonifications": [...],
-  "events": [...],
-  "events_exclusive": [...]
-}
-```
-
-## Response Format
-
-All API responses follow this format:
-
-### Success Response
+**Response:**
 ```json
 {
   "success": true,
-  "data": {...},
-  "message": "Optional message"
-}
-```
-
-### Error Response
-```json
-{
-  "success": false,
-  "error": "Error message"
-}
-```
-
-### Paginated Response
-```json
-{
-  "success": true,
-  "data": [...],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 100,
-    "totalPages": 5
+  "data": {
+    "token": "jwt_token_here",
+    "user": {
+      "id": "user_id",
+      "email": "user@example.com",
+      "restaurant_id": "restaurant_id"
+    }
   }
 }
 ```
 
-## Error Codes
+#### POST `/api/auth/register`
+Registrar novo usuário.
 
-- `400` - Bad Request (validation errors)
-- `401` - Unauthorized (missing or invalid token)
-- `403` - Forbidden (insufficient permissions)
-- `404` - Not Found
-- `409` - Conflict (e.g., table already reserved)
-- `500` - Internal Server Error
+**Request Body:**
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "name": "Nome do Usuário"
+}
+```
+
+### 2. Restaurantes
+
+#### GET `/api/restaurants/settings`
+Obter configurações completas do restaurante (incluindo IA, notificações, WhatsApp e usuários).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "restaurant": {
+      "id": "restaurant_id",
+      "name": "Nome do Restaurante",
+      "description": "Descrição",
+      "address": "Endereço",
+      "city": "Cidade",
+      "state": "Estado",
+      "postal_code": "CEP",
+      "phone": "Telefone",
+      "email": "Email",
+      "website": "Website",
+      "opening_hours": {},
+      "max_capacity": 120,
+      "logo_url": "URL do logo"
+    },
+    "ai_settings": {
+      "id": "ai_settings_id",
+      "personality": "friendly",
+      "settings": {
+        "welcome_message": "Mensagem personalizada",
+        "menu_suggestions": true,
+        "language": "pt_BR"
+      }
+    },
+    "notification_settings": {
+      "id": "notification_settings_id",
+      "settings": {
+        "email_notifications": true,
+        "whatsapp_notifications": true,
+        "reservation_confirmation": true
+      }
+    },
+    "whatsapp_account_info": {
+      "id": "whatsapp_info_id",
+      "description": "Descrição do negócio",
+      "about": "Sobre o restaurante",
+      "address": "Endereço"
+    },
+    "users": [
+      {
+        "id": "user_id",
+        "name": "Nome do Usuário",
+        "role": "Operador",
+        "is_active": true
+      }
+    ]
+  }
+}
+```
+
+#### PUT `/api/restaurants/settings`
+Atualizar configurações do restaurante.
+
+**Request Body:**
+```json
+{
+  "restaurant": {
+    "name": "Novo Nome",
+    "description": "Nova Descrição"
+  },
+  "ai_settings": {
+    "personality": "formal"
+  },
+  "notification_settings": {
+    "email_notifications": false
+  }
+}
+```
+
+#### POST `/api/restaurants/logo`
+Fazer upload do logo do restaurante.
+
+**Headers:** `Authorization: Bearer <token>`
+**Content-Type:** `multipart/form-data`
+
+**Form Data:**
+- `file`: Arquivo de imagem (JPG, PNG ou WebP, máximo 2MB)
+
+### 3. Configurações de IA
+
+#### GET `/api/ai/settings`
+Obter configurações de IA do restaurante.
+
+#### POST `/api/ai/settings`
+Criar/atualizar configurações de IA.
+
+**Request Body:**
+```json
+{
+  "personality": "friendly",
+  "settings": {
+    "welcome_message": "Olá! Como posso ajudá-lo?",
+    "menu_suggestions": true,
+    "language": "pt_BR"
+  }
+}
+```
+
+#### PUT `/api/ai/settings/personality`
+Atualizar personalidade da IA.
+
+**Request Body:**
+```json
+{
+  "personality": "formal"
+}
+```
+
+**Personalities disponíveis:**
+- `formal`: Formal e Profissional
+- `friendly`: Amigável e Casual  
+- `enthusiastic`: Entusiasta e Expressivo
+
+#### PUT `/api/ai/settings/custom`
+Atualizar configurações customizadas da IA.
+
+#### POST `/api/ai/settings/reset`
+Resetar configurações de IA para padrão.
+
+### 4. Configurações de Notificação
+
+#### GET `/api/notifications/settings`
+Obter configurações de notificação.
+
+#### PUT `/api/notifications/settings`
+Atualizar configurações de notificação.
+
+**Request Body:**
+```json
+{
+  "email_notifications": true,
+  "whatsapp_notifications": true,
+  "reservation_confirmation": true,
+  "reservation_reminder": true,
+  "waiting_list_notification": true,
+  "table_ready_notification": true,
+  "marketing_notifications": false,
+  "notification_timing": {
+    "reservation_reminder_hours": 24,
+    "table_ready_delay": 5
+  }
+}
+```
+
+#### POST `/api/notifications/settings/default`
+Criar configurações de notificação padrão.
+
+#### PUT `/api/notifications/settings/toggle/{type}`
+Alternar tipo de notificação específico.
+
+**Path Parameters:**
+- `type`: Tipo de notificação (email_notifications, sms_notifications, etc.)
+
+**Request Body:**
+```json
+{
+  "enabled": true
+}
+```
+
+#### PUT `/api/notifications/settings/timing`
+Atualizar configurações de timing das notificações.
+
+### 5. Usuários
+
+#### GET `/api/users`
+Listar usuários do restaurante.
+
+**Query Parameters:**
+- `page`: Número da página (padrão: 1)
+- `limit`: Limite de usuários por página (padrão: 10)
+
+#### POST `/api/users`
+Criar novo usuário.
+
+**Request Body:**
+```json
+{
+  "name": "Nome do Usuário",
+  "role": "Operador",
+  "email": "email@example.com",
+  "phone": "Telefone",
+  "permissions": ["reservations", "tables"]
+}
+```
+
+#### GET `/api/users/{id}`
+Obter usuário por ID.
+
+#### PUT `/api/users/{id}`
+Atualizar usuário.
+
+#### DELETE `/api/users/{id}`
+Excluir usuário (soft delete).
+
+#### PUT `/api/users/{id}/status`
+Atualizar status do usuário.
+
+**Request Body:**
+```json
+{
+  "isActive": false
+}
+```
+
+#### PUT `/api/users/{id}/permissions`
+Atualizar permissões do usuário.
+
+**Request Body:**
+```json
+{
+  "permissions": ["reservations", "tables", "menu"]
+}
+```
+
+### 6. WhatsApp
+
+#### GET `/api/whatsapp/status`
+Verificar status da integração WhatsApp.
+
+#### POST `/api/whatsapp/profile`
+Atualizar perfil do WhatsApp Business.
+
+#### POST `/api/whatsapp/profile/photo`
+Enviar foto de perfil do WhatsApp Business.
+
+#### GET `/api/whatsapp/oauth/initiate`
+Iniciar fluxo OAuth do WhatsApp.
+
+#### GET `/api/whatsapp/oauth/callback`
+Callback OAuth do WhatsApp.
+
+#### POST `/api/whatsapp/disconnect`
+Desvincular WhatsApp do restaurante.
+
+### 7. Outros Endpoints
+
+#### GET `/api/health`
+Health check básico.
+
+#### GET `/api/health/detailed`
+Health check detalhado.
+
+## Schemas
+
+### Restaurant
+```json
+{
+  "id": "string (uuid)",
+  "name": "string",
+  "description": "string (opcional)",
+  "logo_url": "string (opcional)",
+  "address": "string (opcional)",
+  "city": "string (opcional)",
+  "state": "string (opcional)",
+  "postal_code": "string (opcional)",
+  "phone": "string (opcional)",
+  "email": "string (opcional)",
+  "website": "string (opcional)",
+  "opening_hours": "object (opcional)",
+  "max_capacity": "number (opcional)",
+  "onboarding_completed": "boolean",
+  "onboarding_step": "number",
+  "user_id": "string (uuid)",
+  "created_at": "string (date-time)",
+  "updated_at": "string (date-time)"
+}
+```
+
+### AISettings
+```json
+{
+  "id": "string (uuid)",
+  "restaurant_id": "string (uuid)",
+  "personality": "string (enum: formal, friendly, enthusiastic)",
+  "settings": {
+    "welcome_message": "string (opcional)",
+    "reservation_flow": "string (opcional)",
+    "menu_suggestions": "boolean (opcional)",
+    "customer_service_tone": "string (opcional)",
+    "language": "string (opcional)",
+    "max_response_length": "number (opcional)",
+    "auto_suggestions": "boolean (opcional)"
+  },
+  "created_at": "string (date-time)",
+  "updated_at": "string (date-time)"
+}
+```
+
+### NotificationSettings
+```json
+{
+  "id": "string (uuid)",
+  "restaurant_id": "string (uuid)",
+  "settings": {
+    "email_notifications": "boolean",
+    "sms_notifications": "boolean",
+    "whatsapp_notifications": "boolean",
+    "push_notifications": "boolean",
+    "reservation_confirmation": "boolean",
+    "reservation_reminder": "boolean",
+    "waiting_list_notification": "boolean",
+    "table_ready_notification": "boolean",
+    "marketing_notifications": "boolean",
+    "notification_timing": {
+      "reservation_reminder_hours": "number",
+      "table_ready_delay": "number"
+    }
+  },
+  "created_at": "string (date-time)",
+  "updated_at": "string (date-time)"
+}
+```
+
+### UserProfileExtended
+```json
+{
+  "id": "string (uuid)",
+  "name": "string (opcional)",
+  "role": "string (opcional)",
+  "restaurant_id": "string (uuid) (opcional)",
+  "user_id": "string (uuid)",
+  "created_by": "string (uuid) (opcional)",
+  "email": "string (opcional)",
+  "phone": "string (opcional)",
+  "avatar_url": "string (opcional)",
+  "permissions": "array of strings (opcional)",
+  "is_active": "boolean (opcional)",
+  "last_login": "string (date-time) (opcional)",
+  "created_at": "string (date-time)",
+  "updated_at": "string (date-time)"
+}
+```
+
+## Códigos de Status HTTP
+
+- `200`: Sucesso
+- `201`: Criado com sucesso
+- `400`: Dados inválidos
+- `401`: Não autorizado
+- `403`: Proibido
+- `404`: Não encontrado
+- `500`: Erro interno do servidor
 
 ## Rate Limiting
 
-- 100 requests per 15 minutes per IP address
-- Exceeds limit returns 429 status code
+⚠️ **Rate limiting está temporariamente desabilitado** - será reativado antes da produção.
 
 ## CORS
 
-Development origins:
-- `http://localhost:3000`
-- `http://localhost:5173`
-- `http://localhost:5174`
-- `http://localhost:5175`
+A API está configurada para aceitar requisições dos seguintes domínios:
+- `localhost:5173`
+- `localhost:3000`
+- `cheffguio.com`
+- `angubackend-production.up.railway.app`
 
-Production origins:
-- `https://cheffguio.com`
-- `https://www.cheffguio.com` 
+## Documentação Swagger
+
+A documentação interativa está disponível em:
+- **Produção**: `https://angubackend-production.up.railway.app/api-docs`
+- **Desenvolvimento**: `http://localhost:3001/api-docs`
+
+## Suporte
+
+Para suporte técnico, entre em contato:
+- **Email**: support@cheffguio.com
+- **Documentação**: `/api-docs`
+
+---
+
+**Versão da API**: 1.0.0  
+**Última atualização**: Janeiro 2025 

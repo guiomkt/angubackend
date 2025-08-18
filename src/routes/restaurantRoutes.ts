@@ -2,8 +2,24 @@ import { Router } from 'express';
 import restaurantController from '../controllers/restaurantController';
 import { authenticateToken, requireRestaurant } from '../middleware/auth';
 import { validate, restaurantSchema, restaurantSchemas } from '../middleware/validation';
+import multer from 'multer';
 
 const router = Router();
+
+// Configuração do multer para upload de arquivos
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024 // 2MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 /**
  * @swagger
@@ -452,5 +468,155 @@ router.patch('/:id/onboarding', authenticateToken, requireRestaurant, restaurant
  *         description: Restaurant not found
  */
 router.delete('/:id', authenticateToken, requireRestaurant, restaurantController.deleteRestaurant);
+
+// Rota de teste simples
+router.get('/settings/test', authenticateToken, requireRestaurant, async (req: any, res) => {
+  try {
+    console.log('Rota de teste /settings/test chamada');
+    console.log('User na rota:', req.user);
+    
+    return res.json({
+      success: true,
+      message: 'Rota de teste funcionando',
+      user: req.user,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Erro na rota de teste:', error);
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/restaurants/settings:
+ *   get:
+ *     summary: Obter configurações completas do restaurante
+ *     tags: [Restaurants]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Configurações do restaurante
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     restaurant:
+ *                       $ref: '#/components/schemas/Restaurant'
+ *                     ai_settings:
+ *                       $ref: '#/components/schemas/AISettings'
+ *                     notification_settings:
+ *                       $ref: '#/components/schemas/NotificationSettings'
+ *                     whatsapp_account_info:
+ *                       $ref: '#/components/schemas/WhatsAppAccountInfo'
+ *                     users:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/UserProfileExtended'
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/settings', authenticateToken, requireRestaurant, async (req: any, res, next) => {
+  try {
+    return await restaurantController.getRestaurantSettings(req, res, next);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/restaurants/settings:
+ *   put:
+ *     summary: Atualizar configurações do restaurante
+ *     tags: [Restaurants]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               restaurant:
+ *                 $ref: '#/components/schemas/Restaurant'
+ *               ai_settings:
+ *                 $ref: '#/components/schemas/AISettings'
+ *               notification_settings:
+ *                 $ref: '#/components/schemas/NotificationSettings'
+ *               whatsapp_account_info:
+ *                 $ref: '#/components/schemas/WhatsAppAccountInfo'
+ *     responses:
+ *       200:
+ *         description: Configurações atualizadas com sucesso
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.put('/settings', authenticateToken, requireRestaurant, restaurantController.updateRestaurantSettings);
+
+/**
+ * @swagger
+ * /api/restaurants/logo:
+ *   post:
+ *     summary: Fazer upload do logo do restaurante
+ *     tags: [Restaurants]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Arquivo de imagem (JPG, PNG ou WebP, máximo 2MB)
+ *     responses:
+ *       200:
+ *         description: Logo enviado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     logo_url:
+ *                       type: string
+ *       400:
+ *         description: Arquivo inválido ou não enviado
+ *       401:
+ *         description: Não autorizado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.post('/logo', authenticateToken, requireRestaurant, upload.single('file'), restaurantController.uploadRestaurantLogo);
 
 export default router; 

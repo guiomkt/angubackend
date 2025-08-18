@@ -76,7 +76,7 @@ return res.status(201).json(result)
       }
 
       const result = await restaurantService.updateRestaurant(id, req.body);
-return res.json(result)
+      return res.json(result);
     } catch (error) {
       return next(error);
     }
@@ -107,7 +107,50 @@ return res.json(result)
       }
 
       const result = await restaurantService.updateOnboardingStatus(id, completed, step);
-return res.json(result)
+      return res.json(result);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async getRestaurantSettings(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.restaurant_id) {
+        throw createError('User not authenticated', 401);
+      }
+
+      const result = await restaurantService.getRestaurantSettings(req.user.restaurant_id);
+      return res.json(result);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async updateRestaurantSettings(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.restaurant_id) {
+        throw createError('User not authenticated', 401);
+      }
+
+      const result = await restaurantService.updateRestaurantSettings(req.user.restaurant_id, req.body);
+      return res.json(result);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async uploadRestaurantLogo(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user?.restaurant_id) {
+        throw createError('User not authenticated', 401);
+      }
+
+      if (!req.file) {
+        throw createError('No file uploaded', 400);
+      }
+
+      const result = await restaurantService.uploadRestaurantLogo(req.user.restaurant_id, req.file);
+      return res.json(result);
     } catch (error) {
       return next(error);
     }
