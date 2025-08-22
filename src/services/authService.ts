@@ -510,7 +510,7 @@ export class AuthService {
       const stateData = {
         userId: user.data.id, // Usar o ID da tabela users, não do auth.users
         restaurantId,
-        redirectUrl: `${frontendUrl}/whatsapp`,
+        redirectUrl: `${frontendUrl}/whatsapp/callback`,
         timestamp: Date.now()
       };
 
@@ -557,9 +557,9 @@ export class AuthService {
       userId,
       restaurantId,
       // IMPORTANTE: Em produção, SEMPRE usar a URL correta
-      redirectUrl: isProduction 
-        ? 'https://www.angu.ai/whatsapp'
-        : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+              redirectUrl: isProduction 
+          ? 'https://www.angu.ai/whatsapp/callback'
+          : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp/callback`,
       timestamp: Date.now()
     };
 
