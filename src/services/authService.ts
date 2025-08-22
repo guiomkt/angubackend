@@ -588,7 +588,9 @@ export class AuthService {
     try {
       // Decodificar state
       const stateData = JSON.parse(decodeURIComponent(state));
-      const { userId, restaurantId } = stateData;
+      let { userId, restaurantId } = stateData;
+
+      console.log('🔍 Debug OAuth - State decodificado:', { userId, restaurantId });
 
       // Validar se userId e restaurantId existem
       if (!userId || !restaurantId) {
@@ -596,22 +598,44 @@ export class AuthService {
       }
 
       // Verificar se o usuário existe na tabela users
+      console.log('🔍 Debug OAuth - Buscando usuário:', userId);
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id')
+        .select('id, user_id, name')
         .eq('id', userId)
         .single();
 
+      console.log('🔍 Debug OAuth - Resultado busca usuário:', { userData, userError });
+
       if (userError || !userData) {
-        throw new Error(`Usuário não encontrado: ${userId}`);
+        // Tentar buscar por user_id (Supabase Auth ID)
+        console.log('🔍 Debug OAuth - Tentando buscar por user_id:', userId);
+        const { data: userByAuthId, error: userByAuthIdError } = await supabase
+          .from('users')
+          .select('id, user_id, name')
+          .eq('user_id', userId)
+          .single();
+
+        console.log('🔍 Debug OAuth - Resultado busca por user_id:', { userByAuthId, userByAuthIdError });
+
+        if (userByAuthIdError || !userByAuthId) {
+          throw new Error(`Usuário não encontrado por id nem por user_id: ${userId}`);
+        }
+
+        // Usar o ID da tabela users
+        userId = userByAuthId.id;
+        console.log('🔍 Debug OAuth - Usando ID da tabela users:', userId);
       }
 
       // Verificar se o restaurante existe
+      console.log('🔍 Debug OAuth - Buscando restaurante:', restaurantId);
       const { data: restaurantData, error: restaurantError } = await supabase
         .from('restaurants')
-        .select('id')
+        .select('id, name')
         .eq('id', restaurantId)
         .single();
+
+      console.log('🔍 Debug OAuth - Resultado busca restaurante:', { restaurantData, restaurantError });
 
       if (restaurantError || !restaurantData) {
         throw new Error(`Restaurante não encontrado: ${restaurantId}`);
