@@ -785,25 +785,51 @@ export class AuthService {
         }
       }
 
-      // Salvar token na tabela whatsapp_tokens (estrutura correta)
-      const { error: tokenSaveError } = await supabase
-        .from('whatsapp_tokens')
+      // Salvar token na tabela meta_tokens (que REALMENTE EXISTE no banco)
+      // Primeiro, garantir que temos um usuário válido na tabela users
+      let finalUserId = userId;
+      
+      // Se o userId não for um UUID válido da tabela users, criar o usuário
+      if (!userData) {
+        console.log('🔍 Debug OAuth - Criando usuário na tabela users para meta_tokens');
+        
+        const { data: newUser, error: createUserError } = await supabase
+          .from('users')
+          .insert({
+            user_id: userId, // ID do Supabase Auth
+            name: 'Usuário WhatsApp',
+            role: 'owner'
+          })
+          .select()
+          .single();
+
+        if (createUserError) {
+          console.error('🔍 Debug OAuth - Erro ao criar usuário:', createUserError);
+          throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
+        }
+
+        finalUserId = newUser.id;
+        console.log('🔍 Debug OAuth - Usuário criado com sucesso:', newUser);
+      }
+
+      // Agora salvar na tabela meta_tokens (que EXISTE no banco)
+      const { error: metaTokenError } = await supabase
+        .from('meta_tokens')
         .upsert({
-          business_id: restaurantId, // Usar restaurant_id como business_id
-          token_data: {
-            access_token: longLivedData.access_token,
-            refresh_token: '',
-            token_type: 'long_lived',
-            business_account_id: restaurantId,
-            restaurant_id: restaurantId
-          },
-          expires_at: expiresAt.toISOString()
+          user_id: finalUserId,           // ID da tabela users
+          restaurant_id: restaurantId,    // ID do restaurante
+          access_token: longLivedData.access_token,
+          token_type: 'whatsapp_business',
+          expires_at: expiresAt.toISOString(),
+          business_accounts: accountsData.data || []
         });
 
-      if (tokenSaveError) {
-        console.error('🔍 Debug OAuth - Erro ao salvar token:', tokenSaveError);
-        // Não falhar se não conseguir salvar o token, a integração já foi salva
+      if (metaTokenError) {
+        console.error('🔍 Debug OAuth - Erro ao salvar em meta_tokens:', metaTokenError);
+        throw new Error(`Erro ao salvar token: ${metaTokenError.message}`);
       }
+
+      console.log('🔍 Debug OAuth - Token salvo com sucesso em meta_tokens');
 
       return {
         success: true,
