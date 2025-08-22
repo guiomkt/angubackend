@@ -825,17 +825,55 @@ export class AuthService {
         console.log('🔍 Debug OAuth - Usuário criado com sucesso:', newUser);
       }
 
-      // Agora salvar na tabela meta_tokens (que EXISTE no banco)
-      const { error: metaTokenError } = await supabase
+      // Verificar se já existe um token para este usuário/restaurante
+      console.log('🔍 Debug OAuth - Verificando token existente para:', { finalUserId, restaurantId });
+      
+      const { data: existingToken, error: checkError } = await supabase
         .from('meta_tokens')
-        .upsert({
-          user_id: finalUserId,           // ID da tabela users
-          restaurant_id: restaurantId,    // ID do restaurante
-          access_token: longLivedData.access_token,
-          token_type: 'whatsapp_business',
-          expires_at: expiresAt.toISOString(),
-          business_accounts: accountsData.data || []
-        });
+        .select('id, access_token, expires_at')
+        .eq('user_id', finalUserId)
+        .eq('restaurant_id', restaurantId)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('🔍 Debug OAuth - Erro ao verificar token existente:', checkError);
+      }
+
+      let metaTokenError;
+      
+      if (existingToken) {
+        // Atualizar token existente
+        console.log('🔍 Debug OAuth - Atualizando token existente:', existingToken.id);
+        
+        const { error: updateError } = await supabase
+          .from('meta_tokens')
+          .update({
+            access_token: longLivedData.access_token,
+            token_type: 'whatsapp_business',
+            expires_at: expiresAt.toISOString(),
+            business_accounts: accountsData.data || [],
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingToken.id);
+
+        metaTokenError = updateError;
+      } else {
+        // Criar novo token
+        console.log('🔍 Debug OAuth - Criando novo token');
+        
+        const { error: insertError } = await supabase
+          .from('meta_tokens')
+          .insert({
+            user_id: finalUserId,
+            restaurant_id: restaurantId,
+            access_token: longLivedData.access_token,
+            token_type: 'whatsapp_business',
+            expires_at: expiresAt.toISOString(),
+            business_accounts: accountsData.data || []
+          });
+
+        metaTokenError = insertError;
+      }
 
       if (metaTokenError) {
         console.error('🔍 Debug OAuth - Erro ao salvar em meta_tokens:', metaTokenError);
