@@ -4,10 +4,15 @@ import { createReadStream } from 'fs'
 import { Readable } from 'stream'
 
 interface WhatsAppToken {
-  id: string
+  id: number
   business_id: string
-  access_token: string
-  refresh_token: string
+  token_data: {
+    access_token: string
+    refresh_token: string
+    token_type: string
+    business_account_id?: string
+    phone_number_id?: string
+  }
   expires_at: string
   created_at: string
   updated_at: string
@@ -383,7 +388,11 @@ export class WhatsAppService {
       
       await this.saveToken({
         business_id: businessId,
-        access_token: access_token,
+        token_data: {
+          access_token: access_token,
+          refresh_token: '',
+          token_type: 'long_lived'
+        },
         expires_at: new Date(Date.now() + expires_in * 1000).toISOString()
       })
 
@@ -403,10 +412,10 @@ export class WhatsAppService {
       const now = new Date()
 
       if (expiresAt <= now) {
-        return await this.refreshToken(businessId, token.refresh_token)
+        return await this.refreshToken(businessId, token.token_data.refresh_token)
       }
 
-      return token.access_token
+      return token.token_data.access_token
     } catch (error) {
       console.error('Erro ao obter token válido:', error)
       return null

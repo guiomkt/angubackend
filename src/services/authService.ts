@@ -472,9 +472,25 @@ export class AuthService {
         
         const restaurantId = restaurant.data.id;
         
+              // Criar um usuário na tabela users se não existir
+        const { data: newUser, error: createUserError } = await supabase
+          .from('users')
+          .insert({
+            user_id: userId, // ID do Supabase Auth
+            name: 'Usuário WhatsApp',
+            email: '', // Será preenchido depois
+            role: 'owner'
+          })
+          .select()
+          .single();
+        
+        if (createUserError) {
+          throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
+        }
+        
         return {
-          authUrl: this.generateAuthUrl(userId, restaurantId),
-          state: this.generateState(userId, restaurantId)
+          authUrl: this.generateAuthUrl(newUser.id, restaurantId),
+          state: this.generateState(newUser.id, restaurantId)
         };
       }
 
@@ -486,7 +502,7 @@ export class AuthService {
 
       // Criar state com dados necessários
       const stateData = {
-        userId,
+        userId: user.data.id, // Usar o ID da tabela users, não do auth.users
         restaurantId,
         redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp/callback`,
         timestamp: Date.now()
@@ -573,6 +589,33 @@ export class AuthService {
       // Decodificar state
       const stateData = JSON.parse(decodeURIComponent(state));
       const { userId, restaurantId } = stateData;
+
+      // Validar se userId e restaurantId existem
+      if (!userId || !restaurantId) {
+        throw new Error('userId e restaurantId são obrigatórios no state');
+      }
+
+      // Verificar se o usuário existe na tabela users
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !userData) {
+        throw new Error(`Usuário não encontrado: ${userId}`);
+      }
+
+      // Verificar se o restaurante existe
+      const { data: restaurantData, error: restaurantError } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('id', restaurantId)
+        .single();
+
+      if (restaurantError || !restaurantData) {
+        throw new Error(`Restaurante não encontrado: ${restaurantId}`);
+      }
 
       // Trocar code por short-lived token
       const clientId = process.env.FACEBOOK_APP_ID;
