@@ -733,23 +733,76 @@ export class AuthService {
         throw new Error(`Erro ao buscar contas: ${accountsData.error.message}`);
       }
 
-      // Salvar token no banco
+      // Salvar token no banco - USAR TABELA CORRETA (whatsapp_tokens)
       const expiresAt = new Date();
       expiresAt.setSeconds(expiresAt.getSeconds() + longLivedData.expires_in);
 
-      const { error: saveError } = await supabase
-        .from('meta_tokens')
+      // Buscar ou criar integração WhatsApp
+      let integration = await supabase
+        .from('whatsapp_integrations')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .single();
+
+      if (!integration.data) {
+        // Criar integração se não existir
+        const { data: newIntegration, error: createError } = await supabase
+          .from('whatsapp_integrations')
+          .insert({
+            restaurant_id: restaurantId,
+            instance_name: 'WhatsApp Business',
+            status: 'connected',
+            oauth_access_token: longLivedData.access_token,
+            oauth_token_expires_at: expiresAt.toISOString(),
+            oauth_token_type: 'long_lived',
+            is_oauth_connected: true,
+            last_oauth_refresh: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (createError) {
+          throw new Error(`Erro ao criar integração: ${createError.message}`);
+        }
+
+        integration = { data: newIntegration, error: null } as any;
+      } else {
+        // Atualizar integração existente
+        const { error: updateError } = await supabase
+          .from('whatsapp_integrations')
+          .update({
+            oauth_access_token: longLivedData.access_token,
+            oauth_token_expires_at: expiresAt.toISOString(),
+            oauth_token_type: 'long_lived',
+            is_oauth_connected: true,
+            last_oauth_refresh: new Date().toISOString(),
+            status: 'connected'
+          })
+          .eq('id', integration.data.id);
+
+        if (updateError) {
+          throw new Error(`Erro ao atualizar integração: ${updateError.message}`);
+        }
+      }
+
+      // Salvar token na tabela whatsapp_tokens (estrutura correta)
+      const { error: tokenSaveError } = await supabase
+        .from('whatsapp_tokens')
         .upsert({
-          user_id: userId,
-          restaurant_id: restaurantId,
-          access_token: longLivedData.access_token,
-          token_type: 'user',
-          expires_at: expiresAt.toISOString(),
-          business_accounts: accountsData.data || []
+          business_id: restaurantId, // Usar restaurant_id como business_id
+          token_data: {
+            access_token: longLivedData.access_token,
+            refresh_token: '',
+            token_type: 'long_lived',
+            business_account_id: restaurantId,
+            restaurant_id: restaurantId
+          },
+          expires_at: expiresAt.toISOString()
         });
 
-      if (saveError) {
-        throw new Error(`Erro ao salvar token: ${saveError.message}`);
+      if (tokenSaveError) {
+        console.error('🔍 Debug OAuth - Erro ao salvar token:', tokenSaveError);
+        // Não falhar se não conseguir salvar o token, a integração já foi salva
       }
 
       return {
