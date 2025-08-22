@@ -619,12 +619,43 @@ export class AuthService {
         console.log('🔍 Debug OAuth - Resultado busca por user_id:', { userByAuthId, userByAuthIdError });
 
         if (userByAuthIdError || !userByAuthId) {
-          throw new Error(`Usuário não encontrado por id nem por user_id: ${userId}`);
-        }
+          // Se não encontrar, criar o usuário na tabela users
+          console.log('🔍 Debug OAuth - Criando usuário na tabela users');
+          
+          // Buscar dados do restaurante para obter informações do usuário
+          const { data: restaurantData, error: restaurantError } = await supabase
+            .from('restaurants')
+            .select('name, email')
+            .eq('id', restaurantId)
+            .single();
 
-        // Usar o ID da tabela users
-        userId = userByAuthId.id;
-        console.log('🔍 Debug OAuth - Usando ID da tabela users:', userId);
+          if (restaurantError || !restaurantData) {
+            throw new Error(`Restaurante não encontrado: ${restaurantId}`);
+          }
+
+          // Criar usuário na tabela users
+          const { data: newUser, error: createUserError } = await supabase
+            .from('users')
+            .insert({
+              user_id: userId, // ID do Supabase Auth
+              name: restaurantData.name || 'Usuário WhatsApp',
+              role: 'owner'
+            })
+            .select()
+            .single();
+
+          if (createUserError) {
+            console.error('🔍 Debug OAuth - Erro ao criar usuário:', createUserError);
+            throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
+          }
+
+          console.log('🔍 Debug OAuth - Usuário criado com sucesso:', newUser);
+          userId = newUser.id; // Usar o ID da tabela users
+        } else {
+          // Usar o ID da tabela users
+          userId = userByAuthId.id;
+          console.log('🔍 Debug OAuth - Usando ID da tabela users:', userId);
+        }
       }
 
       // Verificar se o restaurante existe
