@@ -501,10 +501,16 @@ export class AuthService {
       }
 
       // Criar state com dados necessários
+      // IMPORTANTE: Em produção, SEMPRE usar a URL correta
+      const isProduction = process.env.NODE_ENV === 'production';
+      const frontendUrl = isProduction 
+        ? 'https://www.angu.ai' 
+        : (process.env.FRONTEND_URL || 'http://localhost:5173');
+      
       const stateData = {
         userId: user.data.id, // Usar o ID da tabela users, não do auth.users
         restaurantId,
-        redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp/callback`,
+        redirectUrl: `${frontendUrl}/whatsapp`,
         timestamp: Date.now()
       };
 
@@ -550,8 +556,10 @@ export class AuthService {
     const stateData = {
       userId,
       restaurantId,
-      // Esta é a URL para onde o backend redirecionará após processar o OAuth
-      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+      // IMPORTANTE: Em produção, SEMPRE usar a URL correta
+      redirectUrl: isProduction 
+        ? 'https://www.angu.ai/whatsapp'
+        : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
       timestamp: Date.now()
     };
 
@@ -573,11 +581,16 @@ export class AuthService {
    * Gera state para OAuth
    */
   private static generateState(userId: string, restaurantId: string): string {
+    // IMPORTANTE: Em produção, SEMPRE usar a URL correta
+    const isProduction = process.env.NODE_ENV === 'production';
+    
     const stateData = {
       userId,
       restaurantId,
-      // Esta é a URL para onde o backend redirecionará após processar o OAuth
-      redirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+      // IMPORTANTE: Em produção, SEMPRE usar a URL correta
+      redirectUrl: isProduction 
+        ? 'https://www.angu.ai/whatsapp'
+        : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
       timestamp: Date.now()
     };
 
