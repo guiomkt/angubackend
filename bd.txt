@@ -24,8 +24,8 @@ CREATE TABLE public.bloqued_dates (
   end_time time without time zone,
   is_full_day boolean DEFAULT true,
   CONSTRAINT bloqued_dates_pkey PRIMARY KEY (id),
-  CONSTRAINT bloqued_dates_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
-  CONSTRAINT bloqued_dates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT bloqued_dates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT bloqued_dates_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id)
 );
 CREATE TABLE public.chat_analytics (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -74,8 +74,8 @@ CREATE TABLE public.chat_conversations (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_conversations_pkey PRIMARY KEY (id),
-  CONSTRAINT chat_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.chat_contacts(id),
-  CONSTRAINT chat_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT chat_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT chat_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.chat_contacts(id)
 );
 CREATE TABLE public.chat_messages (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -200,6 +200,7 @@ CREATE TABLE public.experience_events (
   init_time time without time zone,
   end_time time without time zone,
   percentage_discount text,
+  status boolean DEFAULT true,
   CONSTRAINT experience_events_pkey PRIMARY KEY (id),
   CONSTRAINT experience_events_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
@@ -249,8 +250,8 @@ CREATE TABLE public.menu_items (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT menu_items_pkey PRIMARY KEY (id),
-  CONSTRAINT menu_items_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT menu_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.menu_categories(id)
+  CONSTRAINT menu_items_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.menu_categories(id),
+  CONSTRAINT menu_items_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.meta_tokens (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -263,8 +264,8 @@ CREATE TABLE public.meta_tokens (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT meta_tokens_pkey PRIMARY KEY (id),
-  CONSTRAINT meta_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id),
-  CONSTRAINT meta_tokens_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT meta_tokens_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT meta_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
 CREATE TABLE public.n8n_chat_histories (
   id integer NOT NULL DEFAULT nextval('n8n_chat_histories_id_seq'::regclass),
@@ -303,11 +304,11 @@ CREATE TABLE public.reservation_experiences (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   reservation_id uuid,
   CONSTRAINT reservation_experiences_pkey PRIMARY KEY (id),
-  CONSTRAINT reservatiom_experience_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT reservation_experiences_reservation_id_fkey FOREIGN KEY (reservation_id) REFERENCES public.reservations(id),
+  CONSTRAINT reservatiom_experience_event_exclusive_id_fkey FOREIGN KEY (event_exclusive_id) REFERENCES public.experience_events_exclusives(id),
   CONSTRAINT reservatiom_experience_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.experience_events(id),
-  CONSTRAINT reservatiom_experience_bonification_id_fkey FOREIGN KEY (bonification_id) REFERENCES public.experience_bonifications(id),
-  CONSTRAINT reservatiom_experience_event_exclusive_id_fkey FOREIGN KEY (event_exclusive_id) REFERENCES public.experience_events_exclusives(id)
+  CONSTRAINT reservation_experiences_reservation_id_fkey FOREIGN KEY (reservation_id) REFERENCES public.reservations(id),
+  CONSTRAINT reservatiom_experience_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT reservatiom_experience_bonification_id_fkey FOREIGN KEY (bonification_id) REFERENCES public.experience_bonifications(id)
 );
 CREATE TABLE public.reservations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -325,9 +326,9 @@ CREATE TABLE public.reservations (
   updated_at timestamp with time zone DEFAULT now(),
   end_time time without time zone,
   CONSTRAINT reservations_pkey PRIMARY KEY (id),
-  CONSTRAINT reservations_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
+  CONSTRAINT reservations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
   CONSTRAINT reservations_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id),
-  CONSTRAINT reservations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT reservations_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id)
 );
 CREATE TABLE public.restaurant_areas (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -414,9 +415,17 @@ CREATE TABLE public.users_profile (
   user_id uuid,
   created_by uuid,
   CONSTRAINT users_profile_pkey PRIMARY KEY (id),
-  CONSTRAINT users_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT users_profile_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
   CONSTRAINT users_profile_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),
-  CONSTRAINT users_profile_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT users_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.version_control (
+  id integer NOT NULL DEFAULT nextval('version_control_id_seq'::regclass),
+  resource_type character varying NOT NULL UNIQUE,
+  version bigint NOT NULL DEFAULT 1,
+  last_updated timestamp with time zone DEFAULT now(),
+  description text,
+  CONSTRAINT version_control_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.waiting_list (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -435,8 +444,8 @@ CREATE TABLE public.waiting_list (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT waiting_list_pkey PRIMARY KEY (id),
-  CONSTRAINT waiting_list_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id),
   CONSTRAINT waiting_list_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT waiting_list_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id),
   CONSTRAINT waiting_list_area_preference_fkey FOREIGN KEY (area_preference) REFERENCES public.restaurant_areas(id)
 );
 CREATE TABLE public.waiting_list_config (
@@ -467,8 +476,8 @@ CREATE TABLE public.waiting_list_history (
   changed_by uuid,
   notes text,
   CONSTRAINT waiting_list_history_pkey PRIMARY KEY (id),
-  CONSTRAINT waiting_list_history_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT waiting_list_history_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.waiting_list(id)
+  CONSTRAINT waiting_list_history_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES public.waiting_list(id),
+  CONSTRAINT waiting_list_history_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.whatsapp_account_info (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -526,8 +535,8 @@ CREATE TABLE public.whatsapp_conversations (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT whatsapp_conversations_pkey PRIMARY KEY (id),
-  CONSTRAINT whatsapp_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.whatsapp_contacts(id),
-  CONSTRAINT whatsapp_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
+  CONSTRAINT whatsapp_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
+  CONSTRAINT whatsapp_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.whatsapp_contacts(id)
 );
 CREATE TABLE public.whatsapp_credentials (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -641,4 +650,4 @@ CREATE TABLE public.whatsapp_webhooks (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT whatsapp_webhooks_pkey PRIMARY KEY (id),
   CONSTRAINT whatsapp_webhooks_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
-);  
+);
