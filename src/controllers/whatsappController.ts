@@ -99,7 +99,13 @@ export class WhatsAppController {
       }))
 
       // Construir URL de autorização OAuth
-      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`;
+      // IMPORTANTE: O redirect_uri deve ser a URL do backend de produção
+      const isProduction = process.env.NODE_ENV === 'production';
+      const redirectUri = process.env.REDIRECT_URI || 
+        (isProduction 
+          ? 'https://api.angu.ai/api/whatsapp/oauth/callback'
+          : `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
+        );
       const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=whatsapp_business_management,whatsapp_business_messaging&state=${state}`
 
 return res.json({
@@ -263,7 +269,14 @@ return res.status(500).json({
     try {
       const clientId = process.env.FACEBOOK_APP_ID
       const clientSecret = process.env.FACEBOOK_APP_SECRET
-      const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
+      
+      // IMPORTANTE: O redirect_uri deve ser a URL do backend de produção
+      const isProduction = process.env.NODE_ENV === 'production';
+      const redirectUri = process.env.REDIRECT_URI || 
+        (isProduction 
+          ? 'https://api.angu.ai/api/whatsapp/oauth/callback'
+          : `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/whatsapp/oauth/callback`
+        )
 
       const response = await axios.get<TokenResponse>('https://graph.facebook.com/v20.0/oauth/access_token', {
         params: {
