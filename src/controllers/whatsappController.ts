@@ -226,11 +226,16 @@ return res.status(500).json({
         access_token: longLivedToken
       })
 
-      // Salvar token
+      // Salvar token na estrutura correta da tabela whatsapp_tokens
       await WhatsAppService.saveToken({
         business_id: businessAccount.id,
-        access_token: longLivedToken,
-        refresh_token: '', // Facebook não fornece refresh tokens
+        token_data: {
+          access_token: longLivedToken,
+          refresh_token: '', // Facebook não fornece refresh tokens
+          token_type: 'long_lived',
+          business_account_id: businessAccount.id,
+          phone_number_id: phoneNumber.id
+        },
         expires_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString() // 60 dias
       })
 
@@ -1118,8 +1123,11 @@ return res.status(500).json({
 
       const token = await WhatsAppService.saveToken({
         business_id: businessId,
-        access_token: accessToken,
-        refresh_token: refreshToken,
+        token_data: {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_type: 'long_lived'
+        },
         expires_at: expiresAt
       })
 
