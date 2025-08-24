@@ -20,7 +20,7 @@ import experienceRoutes from './routes/experienceRoutes';
 import customerRoutes from './routes/customerRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import chatRoutes from './routes/chatRoutes';
-import whatsappRoutes from './routes/whatsappRoutes';
+
 import uploadRoutes from './routes/uploadRoutes';
 import aiRoutes from './routes/aiRoutes';
 import crmRoutes from './routes/crmRoutes';
@@ -509,7 +509,6 @@ app.use('/api/experience', experienceRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/crm', crmRoutes);
