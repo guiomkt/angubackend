@@ -139,6 +139,13 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
   try {
     const { code, state } = req.query;
 
+    console.log('🔍 OAuth Callback - Parâmetros recebidos:', { code: !!code, state: !!state });
+    console.log('🔍 OAuth Callback - Variáveis de ambiente:', {
+      FACEBOOK_APP_ID: !!process.env.FACEBOOK_APP_ID,
+      FACEBOOK_APP_SECRET: !!process.env.FACEBOOK_APP_SECRET,
+      API_BASE_URL: process.env.API_BASE_URL
+    });
+
     if (!code) {
       return res.status(400).json({
         success: false,
@@ -147,11 +154,18 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     }
 
     // Trocar o code por access_token
+    console.log('🔍 OAuth Callback - Iniciando troca de code por token...');
+    
     const tokenResponse = await axios.post('https://graph.facebook.com/v19.0/oauth/access_token', {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
       redirect_uri: `${process.env.API_BASE_URL}/api/whatsapp/oauth/callback`
+    });
+
+    console.log('🔍 OAuth Callback - Token response recebido:', { 
+      success: !!tokenResponse.data, 
+      hasAccessToken: !!(tokenResponse.data as any).access_token 
     });
 
     const { access_token, token_type, expires_in } = tokenResponse.data as MetaTokenResponse;
@@ -160,10 +174,17 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
     // Buscar business accounts e phone numbers
+    console.log('🔍 OAuth Callback - Buscando business accounts...');
+    
     const businessResponse = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
       headers: {
         'Authorization': `Bearer ${access_token}`
       }
+    });
+
+    console.log('🔍 OAuth Callback - Business response recebido:', { 
+      success: !!businessResponse.data, 
+      hasData: !!(businessResponse.data as any).data 
     });
 
     const businesses = (businessResponse.data as MetaBusinessResponse).data;
@@ -211,6 +232,8 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     }
 
     // Salvar integração no banco usando a tabela whatsapp_tokens existente
+    console.log('🔍 OAuth Callback - Salvando no banco de dados...');
+    
     const { error } = await supabase
       .from('whatsapp_tokens')
       .insert({
