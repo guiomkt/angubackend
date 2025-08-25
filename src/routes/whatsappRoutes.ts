@@ -210,24 +210,25 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    // Salvar integração no banco (associar ao restaurante será feito no frontend)
+    // Salvar integração no banco usando a tabela whatsapp_tokens existente
     const { error } = await supabase
-      .from('oauth_tokens')
+      .from('whatsapp_tokens')
       .insert({
-        provider: 'meta',
-        access_token,
-        token_type: token_type || 'long_lived',
-        expires_at: expiresAt.toISOString(),
         business_id: business.id,
-        metadata: {
+        token_data: {
+          provider: 'meta',
+          access_token,
+          token_type: token_type || 'long_lived',
+          expires_at: expiresAt.toISOString(),
           businesses: businesses,
           waba_id: wabaId,
           phone_number_id: phoneNumber.id,
           phone_number: phoneNumber.display_phone_number,
           business_name: business.name,
-          state: state
+          state: state,
+          is_active: true
         },
-        is_active: true
+        expires_at: expiresAt.toISOString()
       });
 
     if (error) {
