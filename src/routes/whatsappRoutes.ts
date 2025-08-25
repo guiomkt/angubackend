@@ -181,12 +181,12 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Calcular data de expiração
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
-    // Buscar páginas do Facebook do usuário
+        // Buscar páginas do Facebook do usuário (como no exemplo funcional)
     console.log('🔍 OAuth Callback - Buscando páginas do Facebook...');
     
     let pagesResponse: any;
     try {
-      pagesResponse = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
+      pagesResponse = await axios.get('https://graph.facebook.com/v20.0/me/accounts', {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -217,7 +217,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
 
-    // Buscar WhatsApp Business Account conectado à primeira página
+    // Buscar WhatsApp Business Account conectado à primeira página (como no exemplo funcional)
     console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account...');
     
     let wabaId: string | null = null;
@@ -227,16 +227,16 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       try {
         console.log('🔍 OAuth Callback - Verificando página:', page.name);
         
-        const wabaResponse = await axios.get(`https://graph.facebook.com/v19.0/${page.id}?fields=connected_whatsapp_business_account`, {
+        const wabaResponse = await axios.get(`https://graph.facebook.com/v20.0/${page.id}?fields=connected_whatsapp_business_account`, {
           headers: {
             'Authorization': `Bearer ${access_token}`
           }
         });
 
-                 const wabaData = wabaResponse.data as any;
-         
-         if (wabaData.connected_whatsapp_business_account) {
-           wabaId = wabaData.connected_whatsapp_business_account.id;
+        const wabaData = wabaResponse.data as any;
+        
+        if (wabaData.connected_whatsapp_business_account) {
+          wabaId = wabaData.connected_whatsapp_business_account.id;
           selectedPage = page;
           console.log('🔍 OAuth Callback - WhatsApp Business Account encontrado na página:', page.name);
           break;
@@ -256,8 +256,8 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
 
-    // Buscar phone numbers
-    const phoneResponse = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/phone_numbers`, {
+    // Buscar phone numbers (como no exemplo funcional)
+    const phoneResponse = await axios.get(`https://graph.facebook.com/v20.0/${wabaId}/phone_numbers`, {
       headers: {
         'Authorization': `Bearer ${access_token}`
       }
