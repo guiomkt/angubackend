@@ -156,11 +156,17 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Trocar o code por access_token
     console.log('🔍 OAuth Callback - Iniciando troca de code por token...');
     
+    // Usar API_BASE_URL ou fallback para produção
+    const baseUrl = process.env.API_BASE_URL || 'https://api.angu.ai';
+    const redirectUri = `${baseUrl}/api/whatsapp/oauth/callback`;
+    
+    console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
+    
     const tokenResponse = await axios.post('https://graph.facebook.com/v19.0/oauth/access_token', {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
-      redirect_uri: `${process.env.API_BASE_URL}/api/whatsapp/oauth/callback`
+      redirect_uri: redirectUri
     });
 
     console.log('🔍 OAuth Callback - Token response recebido:', { 
@@ -265,7 +271,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       message: 'WhatsApp integration completed successfully',
-      redirect_url: `${process.env.FRONTEND_URL}/settings/integrations?whatsapp=connected`
+      redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=connected`
     });
 
   } catch (error) {
