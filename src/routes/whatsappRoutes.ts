@@ -181,23 +181,23 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Calcular data de expiração
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
-    // Buscar WhatsApp Business Accounts diretamente
-    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Accounts...');
+    // Buscar páginas do Facebook do usuário
+    console.log('🔍 OAuth Callback - Buscando páginas do Facebook...');
     
-    let wabaResponse: any;
+    let pagesResponse: any;
     try {
-      wabaResponse = await axios.get('https://graph.facebook.com/v19.0/me/whatsapp_business_accounts', {
+      pagesResponse = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
       });
 
-      console.log('🔍 OAuth Callback - WABA response recebido:', { 
-        success: !!wabaResponse.data, 
-        hasData: !!(wabaResponse.data as any).data 
+      console.log('🔍 OAuth Callback - Pages response recebido:', { 
+        success: !!pagesResponse.data, 
+        hasData: !!(pagesResponse.data as any).data 
       });
     } catch (error: any) {
-      console.error('🔍 OAuth Callback - Erro na API do Facebook:', {
+      console.error('🔍 OAuth Callback - Erro ao buscar páginas:', {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: error.response?.data,
@@ -206,25 +206,55 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       throw error;
     }
 
-    const wabaAccounts = (wabaResponse.data as any).data;
-    const wabaAccount = wabaAccounts[0];
-
-    if (!wabaAccount) {
+    const pages = (pagesResponse.data as any).data;
+    
+    if (!pages || pages.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No WhatsApp Business Account found. Make sure your Facebook app has WhatsApp Business permissions.'
+        message: 'No Facebook pages found. You need to have at least one Facebook page to use WhatsApp Business.'
       });
     }
 
-    const wabaId = wabaAccount.id;
-    console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
+    console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
+
+    // Buscar WhatsApp Business Account conectado à primeira página
+    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account...');
+    
+    let wabaId: string | null = null;
+    let selectedPage: any = null;
+
+    for (const page of pages) {
+      try {
+        console.log('🔍 OAuth Callback - Verificando página:', page.name);
+        
+        const wabaResponse = await axios.get(`https://graph.facebook.com/v19.0/${page.id}?fields=connected_whatsapp_business_account`, {
+          headers: {
+            'Authorization': `Bearer ${access_token}`
+          }
+        });
+
+                 const wabaData = wabaResponse.data as any;
+         
+         if (wabaData.connected_whatsapp_business_account) {
+           wabaId = wabaData.connected_whatsapp_business_account.id;
+          selectedPage = page;
+          console.log('🔍 OAuth Callback - WhatsApp Business Account encontrado na página:', page.name);
+          break;
+        }
+      } catch (error: any) {
+        console.log('🔍 OAuth Callback - Página sem WhatsApp Business:', page.name);
+        continue;
+      }
+    }
 
     if (!wabaId) {
       return res.status(400).json({
         success: false,
-        message: 'No WhatsApp Business Account found'
+        message: 'No WhatsApp Business Account found. Make sure one of your Facebook pages has WhatsApp Business connected.'
       });
     }
+
+    console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
 
     // Buscar phone numbers
     const phoneResponse = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/phone_numbers`, {
@@ -255,11 +285,11 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
           access_token,
           token_type: token_type || 'long_lived',
           expires_at: expiresAt.toISOString(),
-          waba_account: wabaAccount,
+          selected_page: selectedPage,
           waba_id: wabaId,
           phone_number_id: phoneNumber.id,
           phone_number: phoneNumber.display_phone_number,
-          business_name: wabaAccount.name || 'WhatsApp Business Account',
+          business_name: selectedPage?.name || 'WhatsApp Business Account',
           state: state,
           is_active: true
         },
