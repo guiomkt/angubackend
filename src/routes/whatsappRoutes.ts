@@ -238,7 +238,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'WhatsApp integration completed successfully',
       redirect_url: `${process.env.FRONTEND_URL}/settings/integrations?whatsapp=connected`
@@ -246,7 +246,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Internal server error during OAuth callback'
     });
@@ -292,12 +292,12 @@ router.get('/webhook', (req: Request, res: Response) => {
   if (mode && token) {
     if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
       console.log('Webhook verified');
-      res.status(200).send(challenge);
+      return res.status(200).send(challenge);
     } else {
-      res.sendStatus(403);
+      return res.sendStatus(403);
     }
   } else {
-    res.sendStatus(403);
+    return res.sendStatus(403);
   }
 });
 
@@ -348,13 +348,13 @@ router.post('/webhook', async (req: Request, res: Response) => {
         }
       }
 
-      res.status(200).send('EVENT_RECEIVED');
+      return res.status(200).send('EVENT_RECEIVED');
     } else {
-      res.sendStatus(404);
+      return res.sendStatus(404);
     }
   } catch (error) {
     console.error('Webhook processing error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Error processing webhook'
     });
@@ -491,7 +491,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     // Criar ou atualizar contato
     await upsertContact(restaurant_id, to, null);
 
-    res.json({
+    return res.json({
       success: true,
       message_id: messageId,
       status: 'sent'
@@ -499,7 +499,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
 
   } catch (error) {
     console.error('Send message error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to send message'
     });
@@ -576,14 +576,14 @@ router.get('/messages', authenticateToken, async (req: AuthenticatedRequest, res
       throw error;
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: data || []
     });
 
   } catch (error) {
     console.error('Get messages error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to retrieve messages'
     });
@@ -634,14 +634,14 @@ router.get('/contacts', authenticateToken, async (req: AuthenticatedRequest, res
       throw error;
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: data || []
     });
 
   } catch (error) {
     console.error('Get contacts error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to retrieve contacts'
     });
@@ -692,14 +692,14 @@ router.get('/integrations', authenticateToken, async (req: AuthenticatedRequest,
       throw error;
     }
 
-    res.json({
+    return res.json({
       success: true,
       data: data || []
     });
 
   } catch (error) {
     console.error('Get integrations error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to retrieve integrations'
     });
@@ -770,14 +770,14 @@ router.post('/integrations/:id/disconnect', authenticateToken, async (req: Authe
       throw updateError;
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Integration disconnected successfully'
     });
 
   } catch (error) {
     console.error('Disconnect integration error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to disconnect integration'
     });
@@ -830,7 +830,7 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
 
     const isConnected = !error && integration;
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         connected: isConnected,
@@ -840,7 +840,7 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
 
   } catch (error) {
     console.error('OAuth status error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to check OAuth status'
     });
