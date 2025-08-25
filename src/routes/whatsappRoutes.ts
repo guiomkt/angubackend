@@ -184,7 +184,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     let wabaResponse: any;
     try {
-      wabaResponse = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
+      wabaResponse = await axios.get('https://graph.facebook.com/v19.0/me/whatsapp_business_accounts', {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -204,45 +204,18 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       throw error;
     }
 
-    const accounts = (wabaResponse.data as any).data;
-    const account = accounts[0];
+    const wabaAccounts = (wabaResponse.data as any).data;
+    const wabaAccount = wabaAccounts[0];
 
-    if (!account) {
+    if (!wabaAccount) {
       return res.status(400).json({
         success: false,
-        message: 'No Facebook page found'
+        message: 'No WhatsApp Business Account found. Make sure your Facebook app has WhatsApp Business permissions.'
       });
     }
 
-    // Buscar WhatsApp Business Account ID da página
-    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account da página...');
-    
-    let wabaData: any;
-    try {
-      const wabaBResponse = await axios.get(`https://graph.facebook.com/v19.0/${account.id}?fields=connected_whatsapp_business_account`, {
-        headers: {
-          'Authorization': `Bearer ${access_token}`
-        }
-      });
-      
-      wabaData = wabaBResponse.data;
-      console.log('🔍 OAuth Callback - WABA data recebido:', { 
-        success: !!wabaData, 
-        hasWaba: !!wabaData.connected_whatsapp_business_account 
-      });
-    } catch (error: any) {
-      console.error('🔍 OAuth Callback - Erro ao buscar WABA:', error);
-      throw error;
-    }
-
-    const wabaId = wabaData.connected_whatsapp_business_account?.id;
-
-    if (!wabaId) {
-      return res.status(400).json({
-        success: false,
-        message: 'No WhatsApp Business Account connected to this page'
-      });
-    }
+    const wabaId = wabaAccount.id;
+    console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
 
     if (!wabaId) {
       return res.status(400).json({
@@ -274,17 +247,17 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const { error } = await supabase
       .from('whatsapp_tokens')
       .insert({
-        business_id: account.id,
+        business_id: wabaId,
         token_data: {
           provider: 'meta',
           access_token,
           token_type: token_type || 'long_lived',
           expires_at: expiresAt.toISOString(),
-          account: account,
+          waba_account: wabaAccount,
           waba_id: wabaId,
           phone_number_id: phoneNumber.id,
           phone_number: phoneNumber.display_phone_number,
-          business_name: account.name,
+          business_name: wabaAccount.name || 'WhatsApp Business Account',
           state: state,
           is_active: true
         },
