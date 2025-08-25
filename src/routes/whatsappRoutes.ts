@@ -182,16 +182,27 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Buscar business accounts e phone numbers
     console.log('🔍 OAuth Callback - Buscando business accounts...');
     
-    const businessResponse = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
+    let businessResponse: any;
+    try {
+      businessResponse = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
+        }
+      });
 
-    console.log('🔍 OAuth Callback - Business response recebido:', { 
-      success: !!businessResponse.data, 
-      hasData: !!(businessResponse.data as any).data 
-    });
+      console.log('🔍 OAuth Callback - Business response recebido:', { 
+        success: !!businessResponse.data, 
+        hasData: !!(businessResponse.data as any).data 
+      });
+    } catch (error: any) {
+      console.error('🔍 OAuth Callback - Erro na API do Facebook:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+      throw error;
+    }
 
     const businesses = (businessResponse.data as MetaBusinessResponse).data;
     const business = businesses[0];
