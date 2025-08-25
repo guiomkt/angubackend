@@ -24,8 +24,8 @@ CREATE TABLE public.bloqued_dates (
   end_time time without time zone,
   is_full_day boolean DEFAULT true,
   CONSTRAINT bloqued_dates_pkey PRIMARY KEY (id),
-  CONSTRAINT bloqued_dates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT bloqued_dates_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id)
+  CONSTRAINT bloqued_dates_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
+  CONSTRAINT bloqued_dates_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.chat_analytics (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -332,11 +332,11 @@ CREATE TABLE public.reservation_experiences (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   reservation_id uuid,
   CONSTRAINT reservation_experiences_pkey PRIMARY KEY (id),
+  CONSTRAINT reservatiom_experience_event_exclusive_id_fkey FOREIGN KEY (event_exclusive_id) REFERENCES public.experience_events_exclusives(id),
   CONSTRAINT reservation_experiences_reservation_id_fkey FOREIGN KEY (reservation_id) REFERENCES public.reservations(id),
-  CONSTRAINT reservatiom_experience_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.experience_events(id),
-  CONSTRAINT reservatiom_experience_bonification_id_fkey FOREIGN KEY (bonification_id) REFERENCES public.experience_bonifications(id),
   CONSTRAINT reservatiom_experience_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT reservatiom_experience_event_exclusive_id_fkey FOREIGN KEY (event_exclusive_id) REFERENCES public.experience_events_exclusives(id)
+  CONSTRAINT reservatiom_experience_bonification_id_fkey FOREIGN KEY (bonification_id) REFERENCES public.experience_bonifications(id),
+  CONSTRAINT reservatiom_experience_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.experience_events(id)
 );
 CREATE TABLE public.reservations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -354,8 +354,8 @@ CREATE TABLE public.reservations (
   updated_at timestamp with time zone DEFAULT now(),
   end_time time without time zone,
   CONSTRAINT reservations_pkey PRIMARY KEY (id),
-  CONSTRAINT reservations_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
   CONSTRAINT reservations_table_id_fkey FOREIGN KEY (table_id) REFERENCES public.tables(id),
+  CONSTRAINT reservations_area_id_fkey FOREIGN KEY (area_id) REFERENCES public.restaurant_areas(id),
   CONSTRAINT reservations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.restaurant_areas (
@@ -583,8 +583,8 @@ CREATE TABLE public.whatsapp_conversations (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT whatsapp_conversations_pkey PRIMARY KEY (id),
-  CONSTRAINT whatsapp_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT whatsapp_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.whatsapp_contacts(id)
+  CONSTRAINT whatsapp_conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES public.whatsapp_contacts(id),
+  CONSTRAINT whatsapp_conversations_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.whatsapp_credentials (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -649,8 +649,8 @@ CREATE TABLE public.whatsapp_media (
   message_id uuid,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT whatsapp_media_pkey PRIMARY KEY (id),
-  CONSTRAINT whatsapp_media_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id),
-  CONSTRAINT whatsapp_media_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.whatsapp_messages(id)
+  CONSTRAINT whatsapp_media_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.whatsapp_messages(id),
+  CONSTRAINT whatsapp_media_restaurant_id_fkey FOREIGN KEY (restaurant_id) REFERENCES public.restaurants(id)
 );
 CREATE TABLE public.whatsapp_messages (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
