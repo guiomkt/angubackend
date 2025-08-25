@@ -329,4 +329,32 @@ export class MenuService {
       averagePrice: Math.round(averagePrice * 100) / 100
     };
   }
+
+  /**
+   * Delete all categories for a restaurant
+   */
+  static async deleteAllCategoriesByRestaurant(restaurantId: string): Promise<void> {
+    const { error } = await supabase
+      .from('menu_categories')
+      .delete()
+      .eq('restaurant_id', restaurantId);
+
+    if (error) {
+      throw new Error(`Error deleting all categories: ${error.message}`);
+    }
+  }
+
+  /**
+   * Delete all items for a restaurant
+   */
+  static async deleteAllItemsByRestaurant(restaurantId: string): Promise<void> {
+    const { error } = await supabase
+      .from('menu_items')
+      .delete()
+      .eq('restaurant_id', restaurantId);
+
+    if (error) {
+      throw new Error(`Error deleting all items: ${error.message}`);
+    }
+  }
 } 

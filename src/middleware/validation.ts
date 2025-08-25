@@ -118,13 +118,15 @@ export const waitingListSchema = Joi.object({
 export const menuCategorySchema = Joi.object({
   restaurant_id: Joi.string().uuid().required(),
   name: Joi.string().required().min(2).max(100),
-  description: Joi.string().optional().max(500),
+  description: Joi.string().optional().allow('').max(500),
+  order: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().default(true)
 });
 
 export const menuCategoryUpdateSchema = Joi.object({
   name: Joi.string().min(2).max(100).optional(),
-  description: Joi.string().max(500).optional(),
+  description: Joi.string().optional().allow('').max(500),
+  order: Joi.number().integer().min(0).optional(),
   is_active: Joi.boolean().optional()
 });
 
@@ -132,17 +134,17 @@ export const menuItemSchema = Joi.object({
   restaurant_id: Joi.string().uuid().required(),
   category_id: Joi.string().uuid().required(),
   name: Joi.string().required().min(2).max(100),
-  description: Joi.string().optional().max(500),
+  description: Joi.string().optional().allow('').max(500),
   price: Joi.number().positive().required(),
-  image_url: Joi.string().uri().optional(),
+  image_url: Joi.string().uri().optional().allow(''),
   is_active: Joi.boolean().default(true)
 });
 
 export const menuItemUpdateSchema = Joi.object({
   name: Joi.string().min(2).max(100).optional(),
-  description: Joi.string().max(500).optional(),
+  description: Joi.string().optional().allow('').max(500),
   price: Joi.number().positive().optional(),
-  image_url: Joi.string().uri().optional(),
+  image_url: Joi.string().uri().optional().allow(''),
   is_active: Joi.boolean().optional(),
   category_id: Joi.string().uuid().optional()
 });

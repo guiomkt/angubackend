@@ -555,4 +555,122 @@ return res.status(500).json({ error: error instanceof Error ? error.message : 'I
       return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
     }
   }
+
+  /**
+   * @swagger
+   * /api/menu/search:
+   *   get:
+   *     summary: Search menu items
+   *     tags: [Menu]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: restaurantId
+   *         schema:
+   *           type: string
+   *         required: true
+   *         description: Restaurant ID
+   *       - in: query
+   *         name: q
+   *         schema:
+   *           type: string
+   *         required: true
+   *         description: Search query
+   *     responses:
+   *       200:
+   *         description: List of matching menu items
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 $ref: '#/components/schemas/MenuItemWithCategory'
+   */
+  static async searchItems(req: Request, res: Response) {
+    try {
+      const { restaurantId, q } = req.query;
+      
+      if (!restaurantId || typeof restaurantId !== 'string') {
+        return res.status(400).json({ error: 'Restaurant ID is required' });
+      }
+      
+      if (!q || typeof q !== 'string') {
+        return res.status(400).json({ error: 'Search query is required' });
+      }
+
+      const items = await MenuService.searchItems(restaurantId, q);
+      return res.json(items);
+    } catch (error) {
+           return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+   }
+ }
+
+ /**
+  * @swagger
+  * /api/menu/categories/restaurant/{restaurantId}:
+  *   delete:
+  *     summary: Delete all categories for a restaurant
+  *     tags: [Menu]
+  *     security:
+  *       - bearerAuth: []
+  *     parameters:
+  *       - in: path
+  *         name: restaurantId
+  *         schema:
+  *           type: string
+  *         required: true
+  *         description: Restaurant ID
+  *     responses:
+  *       200:
+  *         description: All categories deleted successfully
+  */
+ static async deleteAllCategoriesByRestaurant(req: Request, res: Response) {
+   try {
+     const { restaurantId } = req.params;
+     
+     if (!restaurantId) {
+       return res.status(400).json({ error: 'Restaurant ID is required' });
+     }
+
+     await MenuService.deleteAllCategoriesByRestaurant(restaurantId);
+     return res.json({ message: 'All categories deleted successfully' });
+   } catch (error) {
+     return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+   }
+ }
+
+ /**
+  * @swagger
+  * /api/menu/items/restaurant/{restaurantId}:
+  *   delete:
+  *     summary: Delete all items for a restaurant
+  *     tags: [Menu]
+  *     security:
+  *       - bearerAuth: []
+  *     parameters:
+  *       - in: path
+  *         name: restaurantId
+  *         schema:
+  *           type: string
+  *         required: true
+  *         description: Restaurant ID
+  *     responses:
+  *       200:
+  *         description: All items deleted successfully
+  */
+ static async deleteAllItemsByRestaurant(req: Request, res: Response) {
+   try {
+     const { restaurantId } = req.params;
+     
+     if (!restaurantId) {
+       return res.status(400).json({ error: 'Restaurant ID is required' });
+     }
+
+     await MenuService.deleteAllItemsByRestaurant(restaurantId);
+     return res.json({ message: 'All items deleted successfully' });
+   } catch (error) {
+     return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+   }
+ }
 } 

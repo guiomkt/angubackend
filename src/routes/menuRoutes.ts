@@ -107,6 +107,11 @@ router.delete('/items/:id', MenuController.deleteItem);
 
 // Complete menu and stats
 router.get('/complete', MenuController.getCompleteMenu);
+router.get('/search', MenuController.searchItems);
 router.get('/stats', MenuController.getMenuStats);
+
+// Bulk operations
+router.delete('/categories/restaurant/:restaurantId', MenuController.deleteAllCategoriesByRestaurant);
+router.delete('/items/restaurant/:restaurantId', MenuController.deleteAllItemsByRestaurant);
 
 export default router; 
