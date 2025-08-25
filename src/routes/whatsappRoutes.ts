@@ -179,20 +179,20 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Calcular data de expiração
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
-    // Buscar business accounts e phone numbers
-    console.log('🔍 OAuth Callback - Buscando business accounts...');
+    // Buscar WhatsApp Business Accounts diretamente
+    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Accounts...');
     
-    let businessResponse: any;
+    let wabaResponse: any;
     try {
-      businessResponse = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
+      wabaResponse = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
       });
 
-      console.log('🔍 OAuth Callback - Business response recebido:', { 
-        success: !!businessResponse.data, 
-        hasData: !!(businessResponse.data as any).data 
+      console.log('🔍 OAuth Callback - WABA response recebido:', { 
+        success: !!wabaResponse.data, 
+        hasData: !!(wabaResponse.data as any).data 
       });
     } catch (error: any) {
       console.error('🔍 OAuth Callback - Erro na API do Facebook:', {
@@ -204,25 +204,45 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       throw error;
     }
 
-    const businesses = (businessResponse.data as MetaBusinessResponse).data;
-    const business = businesses[0];
+    const accounts = (wabaResponse.data as any).data;
+    const account = accounts[0];
 
-    if (!business) {
+    if (!account) {
       return res.status(400).json({
         success: false,
-        message: 'No business account found'
+        message: 'No Facebook page found'
       });
     }
 
-    // Buscar WhatsApp Business Account ID
-    const wabaBResponse = await axios.get(`https://graph.facebook.com/v19.0/${business.id}?fields=owned_whatsapp_business_accounts`, {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
+    // Buscar WhatsApp Business Account ID da página
+    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account da página...');
+    
+    let wabaData: any;
+    try {
+      const wabaBResponse = await axios.get(`https://graph.facebook.com/v19.0/${account.id}?fields=connected_whatsapp_business_account`, {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
+        }
+      });
+      
+      wabaData = wabaBResponse.data;
+      console.log('🔍 OAuth Callback - WABA data recebido:', { 
+        success: !!wabaData, 
+        hasWaba: !!wabaData.connected_whatsapp_business_account 
+      });
+    } catch (error: any) {
+      console.error('🔍 OAuth Callback - Erro ao buscar WABA:', error);
+      throw error;
+    }
 
-    const wabaData = wabaBResponse.data as WhatsAppBusinessAccountResponse;
-    const wabaId = wabaData.owned_whatsapp_business_accounts?.data[0]?.id;
+    const wabaId = wabaData.connected_whatsapp_business_account?.id;
+
+    if (!wabaId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No WhatsApp Business Account connected to this page'
+      });
+    }
 
     if (!wabaId) {
       return res.status(400).json({
@@ -254,17 +274,17 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const { error } = await supabase
       .from('whatsapp_tokens')
       .insert({
-        business_id: business.id,
+        business_id: account.id,
         token_data: {
           provider: 'meta',
           access_token,
           token_type: token_type || 'long_lived',
           expires_at: expiresAt.toISOString(),
-          businesses: businesses,
+          account: account,
           waba_id: wabaId,
           phone_number_id: phoneNumber.id,
           phone_number: phoneNumber.display_phone_number,
-          business_name: business.name,
+          business_name: account.name,
           state: state,
           is_active: true
         },
