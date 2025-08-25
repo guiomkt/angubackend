@@ -136,6 +136,8 @@ interface PhoneNumberResponse {
  *         description: Internal server error
  */
 router.get('/oauth/callback', async (req: Request, res: Response) => {
+  console.log('🚀 OAuth Callback - Função iniciada');
+  
   try {
     const { code, state } = req.query;
 
