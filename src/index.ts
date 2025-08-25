@@ -26,6 +26,8 @@ import aiRoutes from './routes/aiRoutes';
 import crmRoutes from './routes/crmRoutes';
 import userRoutes from './routes/userRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import publicMenuRoutes from './routes/publicMenuRoutes';
+import publicRoutes from './routes/publicRoutes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -497,23 +499,27 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: 'Cheff Guio API Documentation'
 }));
 
-// API routes
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/restaurants', restaurantRoutes);
-app.use('/api/reservations', reservationRoutes);
 app.use('/api/areas', areaRoutes);
 app.use('/api/tables', tableRoutes);
+app.use('/api/reservations', reservationRoutes);
 app.use('/api/menu', menuRoutes);
-app.use('/api/waiting-lists', waitingListRoutes);
-app.use('/api/experience', experienceRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/ai', aiRoutes);
 app.use('/api/crm', crmRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/waiting-list', waitingListRoutes);
+app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/experience', experienceRoutes);
+app.use('/api/users', userRoutes);
+
+// Public routes (no authentication required)
+app.use('/api/public/menu', publicMenuRoutes);
+app.use('/api/public', publicRoutes);
 
 // 404 handler
 app.use(notFound);
