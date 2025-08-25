@@ -510,7 +510,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/waiting-list', waitingListRoutes);
+app.use('/api/waiting-lists', waitingListRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', aiRoutes);

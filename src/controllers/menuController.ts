@@ -29,13 +29,16 @@ export class MenuController {
    */
   static async getCategories(req: Request, res: Response) {
     try {
-      const { restaurantId } = req.query;
+      const { restaurantId, restaurant_id } = req.query;
       
-      if (!restaurantId || typeof restaurantId !== 'string') {
+      // Accept both restaurantId and restaurant_id for compatibility
+      const finalRestaurantId = restaurantId || restaurant_id;
+      
+      if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
         return res.status(400).json({ error: 'Restaurant ID is required' });
       }
 
-      const categories = await MenuService.getCategoriesByRestaurant(restaurantId);
+      const categories = await MenuService.getCategoriesByRestaurant(finalRestaurantId);
       return res.json(categories);
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
@@ -290,19 +293,22 @@ return res.status(500).json({ error: error instanceof Error ? error.message : 'I
    */
   static async getItems(req: Request, res: Response) {
     try {
-      const { restaurantId, categoryId, search } = req.query;
+      const { restaurantId, restaurant_id, categoryId, search } = req.query;
       
-      if (!restaurantId || typeof restaurantId !== 'string') {
+      // Accept both restaurantId and restaurant_id for compatibility
+      const finalRestaurantId = restaurantId || restaurant_id;
+      
+      if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
         return res.status(400).json({ error: 'Restaurant ID is required' });
       }
 
       let items;
       if (search && typeof search === 'string') {
-        items = await MenuService.searchItems(restaurantId, search);
+        items = await MenuService.searchItems(finalRestaurantId, search);
       } else if (categoryId && typeof categoryId === 'string') {
         items = await MenuService.getItemsByCategory(categoryId);
       } else {
-        items = await MenuService.getItemsByRestaurant(restaurantId);
+        items = await MenuService.getItemsByRestaurant(finalRestaurantId);
       }
 
       return res.json(items);
@@ -543,13 +549,16 @@ return res.status(500).json({ error: error instanceof Error ? error.message : 'I
    */
   static async getMenuStats(req: Request, res: Response) {
     try {
-      const { restaurantId } = req.query;
+      const { restaurantId, restaurant_id } = req.query;
       
-      if (!restaurantId || typeof restaurantId !== 'string') {
+      // Accept both restaurantId and restaurant_id for compatibility
+      const finalRestaurantId = restaurantId || restaurant_id;
+      
+      if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
         return res.status(400).json({ error: 'Restaurant ID is required' });
       }
 
-      const stats = await MenuService.getMenuStats(restaurantId);
+      const stats = await MenuService.getMenuStats(finalRestaurantId);
       return res.json(stats);
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
@@ -589,9 +598,12 @@ return res.status(500).json({ error: error instanceof Error ? error.message : 'I
    */
   static async searchItems(req: Request, res: Response) {
     try {
-      const { restaurantId, q } = req.query;
+      const { restaurantId, restaurant_id, q } = req.query;
       
-      if (!restaurantId || typeof restaurantId !== 'string') {
+      // Accept both restaurantId and restaurant_id for compatibility
+      const finalRestaurantId = restaurantId || restaurant_id;
+      
+      if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
         return res.status(400).json({ error: 'Restaurant ID is required' });
       }
       
@@ -599,7 +611,7 @@ return res.status(500).json({ error: error instanceof Error ? error.message : 'I
         return res.status(400).json({ error: 'Search query is required' });
       }
 
-      const items = await MenuService.searchItems(restaurantId, q);
+      const items = await MenuService.searchItems(finalRestaurantId, q);
       return res.json(items);
     } catch (error) {
            return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
