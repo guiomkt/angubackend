@@ -29,13 +29,22 @@ const router = Router();
  */
 router.get('/categories', async (req: Request, res: Response) => {
   try {
-    const { restaurantId } = req.query;
+    const { restaurantId, restaurant_id } = req.query;
     
-    if (!restaurantId || typeof restaurantId !== 'string') {
+    // Accept both restaurantId and restaurant_id for compatibility
+    const finalRestaurantId = restaurantId || restaurant_id;
+    
+    if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
       return res.status(400).json({ error: 'Restaurant ID is required' });
     }
 
-    const categories = await MenuService.getCategoriesByRestaurant(restaurantId);
+    const categories = await MenuService.getCategoriesByRestaurant(finalRestaurantId);
+    
+    // Check if categories is a valid array before filtering
+    if (!Array.isArray(categories)) {
+      return res.json([]);
+    }
+    
     // Filter only active categories for public access
     const activeCategories = categories.filter(cat => cat.is_active);
     return res.json(activeCategories);
@@ -74,9 +83,12 @@ router.get('/categories', async (req: Request, res: Response) => {
  */
 router.get('/items', async (req: Request, res: Response) => {
   try {
-    const { restaurantId, categoryId } = req.query;
+    const { restaurantId, restaurant_id, categoryId } = req.query;
     
-    if (!restaurantId || typeof restaurantId !== 'string') {
+    // Accept both restaurantId and restaurant_id for compatibility
+    const finalRestaurantId = restaurantId || restaurant_id;
+    
+    if (!finalRestaurantId || typeof finalRestaurantId !== 'string') {
       return res.status(400).json({ error: 'Restaurant ID is required' });
     }
 
@@ -84,7 +96,12 @@ router.get('/items', async (req: Request, res: Response) => {
     if (categoryId && typeof categoryId === 'string') {
       items = await MenuService.getItemsByCategory(categoryId);
     } else {
-      items = await MenuService.getItemsByRestaurant(restaurantId);
+      items = await MenuService.getItemsByRestaurant(finalRestaurantId);
+    }
+
+    // Check if items is a valid array before filtering
+    if (!Array.isArray(items)) {
+      return res.json([]);
     }
 
     // Filter only active items for public access
