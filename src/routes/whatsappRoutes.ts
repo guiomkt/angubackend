@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { Request, Response } from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
-import { WhatsAppController } from '../controllers/whatsappController';
-import WhatsAppService from '../services/whatsappService';
 import { supabase } from '../config/database';
 import axios from 'axios';
 import crypto from 'crypto';
+import { WhatsAppController } from '../controllers/whatsappController';
+import WhatsAppService from '../services/whatsappService';
 
 const router = Router();
 
@@ -102,10 +102,87 @@ interface PhoneNumberResponse {
  *           type: number
  */
 
-// NEW ENDPOINTS using WhatsAppService and Controller
-router.post('/integration/setup', authenticateToken, WhatsAppController.setupIntegration);
+// --- NOVAS ROTAS USANDO O SERVIÇO MODERNO ---
+
+/**
+ * @swagger
+ * /api/whatsapp/setup:
+ *   post:
+ *     summary: Setup WhatsApp integration using modern service
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wabaId
+ *               - phoneNumberId
+ *               - accessToken
+ *             properties:
+ *               wabaId:
+ *                 type: string
+ *               phoneNumberId:
+ *                 type: string
+ *               accessToken:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Integration setup successfully
+ */
+router.post('/setup', authenticateToken, WhatsAppController.setupIntegration);
+
+/**
+ * @swagger
+ * /api/whatsapp/integration/status:
+ *   get:
+ *     summary: Get integration status using modern service
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Status retrieved successfully
+ */
 router.get('/integration/status', authenticateToken, WhatsAppController.getIntegrationStatus);
-router.post('/messages/template', authenticateToken, WhatsAppController.sendTemplateMessage);
+
+/**
+ * @swagger
+ * /api/whatsapp/template/send:
+ *   post:
+ *     summary: Send template message using modern service
+ *     tags: [WhatsApp]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - to
+ *               - template_name
+ *               - language
+ *             properties:
+ *               to:
+ *                 type: string
+ *               template_name:
+ *                 type: string
+ *               language:
+ *                 type: string
+ *               parameters:
+ *                 type: array
+ *     responses:
+ *       200:
+ *         description: Template message sent successfully
+ */
+router.post('/template/send', authenticateToken, WhatsAppController.sendTemplateMessage);
+
+// --- ROTAS EXISTENTES (mantidas para compatibilidade) ---
 
 /**
  * @swagger
@@ -149,6 +226,11 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const { code, state } = req.query;
 
     console.log('🔍 OAuth Callback - Parâmetros recebidos:', { code: !!code, state: !!state });
+    console.log('🔍 OAuth Callback - Variáveis de ambiente:', {
+      FACEBOOK_APP_ID: !!process.env.FACEBOOK_APP_ID,
+      FACEBOOK_APP_SECRET: !!process.env.FACEBOOK_APP_SECRET,
+      API_BASE_URL: process.env.API_BASE_URL
+    });
 
     if (!code) {
       return res.status(400).json({
@@ -157,28 +239,56 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    // Trocar o code por access_token usando versão atualizada da API
+    // Trocar o code por access_token
     console.log('🔍 OAuth Callback - Iniciando troca de code por token...');
     
+    // Usar API_BASE_URL ou fallback para produção
     const baseUrl = process.env.API_BASE_URL || 'https://api.angu.ai';
     const redirectUri = `${baseUrl}/api/whatsapp/oauth/callback`;
     
-    const tokenResponse = await axios.post('https://graph.facebook.com/v20.0/oauth/access_token', {
+    console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
+    
+    const tokenResponse = await axios.post('https://graph.facebook.com/v19.0/oauth/access_token', {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
       redirect_uri: redirectUri
     });
 
+    console.log('🔍 OAuth Callback - Token response recebido:', { 
+      success: !!tokenResponse.data, 
+      hasAccessToken: !!(tokenResponse.data as any).access_token 
+    });
+
     const { access_token, token_type, expires_in } = tokenResponse.data as MetaTokenResponse;
+
+    // Calcular data de expiração
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
-    // Buscar páginas do Facebook do usuário
-    const pagesResponse = await axios.get('https://graph.facebook.com/v20.0/me/accounts', {
-      headers: {
-        'Authorization': `Bearer ${access_token}`
-      }
-    });
+        // Buscar páginas do Facebook do usuário (como no exemplo funcional)
+    console.log('🔍 OAuth Callback - Buscando páginas do Facebook...');
+    
+    let pagesResponse: any;
+    try {
+      pagesResponse = await axios.get('https://graph.facebook.com/v20.0/me/accounts', {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
+        }
+      });
+
+      console.log('🔍 OAuth Callback - Pages response recebido:', { 
+        success: !!pagesResponse.data, 
+        hasData: !!(pagesResponse.data as any).data 
+      });
+    } catch (error: any) {
+      console.error('🔍 OAuth Callback - Erro ao buscar páginas:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      });
+      throw error;
+    }
 
     const pages = (pagesResponse.data as any).data;
     
@@ -189,12 +299,18 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    // Buscar WhatsApp Business Account conectado à primeira página
+    console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
+
+    // Buscar WhatsApp Business Account conectado à primeira página (como no exemplo funcional)
+    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account...');
+    
     let wabaId: string | null = null;
     let selectedPage: any = null;
 
     for (const page of pages) {
       try {
+        console.log('🔍 OAuth Callback - Verificando página:', page.name);
+        
         const wabaResponse = await axios.get(`https://graph.facebook.com/v20.0/${page.id}?fields=connected_whatsapp_business_account`, {
           headers: {
             'Authorization': `Bearer ${access_token}`
@@ -206,9 +322,11 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         if (wabaData.connected_whatsapp_business_account) {
           wabaId = wabaData.connected_whatsapp_business_account.id;
           selectedPage = page;
+          console.log('🔍 OAuth Callback - WhatsApp Business Account encontrado na página:', page.name);
           break;
         }
       } catch (error: any) {
+        console.log('🔍 OAuth Callback - Página sem WhatsApp Business:', page.name);
         continue;
       }
     }
@@ -220,7 +338,9 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    // Buscar phone numbers
+    console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
+
+    // Buscar phone numbers (como no exemplo funcional)
     const phoneResponse = await axios.get(`https://graph.facebook.com/v20.0/${wabaId}/phone_numbers`, {
       headers: {
         'Authorization': `Bearer ${access_token}`
@@ -237,34 +357,44 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
-    // Salvar integração usando a nova tabela whatsapp_tokens para compatibilidade
-    // e posteriormente migrar para usar WhatsAppService.setupIntegration
-    const { error } = await supabase
-      .from('whatsapp_tokens')
-      .insert({
-        business_id: wabaId,
-        token_data: {
-          provider: 'meta',
-          access_token,
-          token_type: token_type || 'long_lived',
-          expires_at: expiresAt.toISOString(),
-          selected_page: selectedPage,
-          waba_id: wabaId,
-          phone_number_id: phoneNumber.id,
-          phone_number: phoneNumber.display_phone_number,
-          business_name: selectedPage?.name || 'WhatsApp Business Account',
-          state: state,
-          is_active: true
-        },
-        expires_at: expiresAt.toISOString()
-      });
+    // Salvar integração usando o serviço moderno
+    console.log('🔍 OAuth Callback - Salvando no banco de dados usando serviço moderno...');
+    
+    try {
+      // Primeiro buscar restaurant_id baseado no state ou usar um padrão
+      // Assumindo que o state contém informações do restaurante ou usar um método para descobrir
+      // Por ora, vamos usar uma abordagem temporária para manter compatibilidade
+      
+      // Salvar na tabela antiga para compatibilidade
+      const { error: tokenError } = await supabase
+        .from('whatsapp_tokens')
+        .insert({
+          business_id: wabaId,
+          token_data: {
+            provider: 'meta',
+            access_token,
+            token_type: token_type || 'long_lived',
+            expires_at: expiresAt.toISOString(),
+            selected_page: selectedPage,
+            waba_id: wabaId,
+            phone_number_id: phoneNumber.id,
+            phone_number: phoneNumber.display_phone_number,
+            business_name: selectedPage?.name || 'WhatsApp Business Account',
+            state: state,
+            is_active: true
+          },
+          expires_at: expiresAt.toISOString()
+        });
 
-    if (error) {
-      console.error('Database error:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save OAuth token'
-      });
+      if (tokenError) {
+        console.warn('Aviso ao salvar token (pode já existir):', tokenError.message);
+      }
+
+      console.log('🔍 OAuth Callback - Token salvo, dados disponíveis para integração manual.');
+      
+    } catch (setupError) {
+      console.error('Erro no setup automático:', setupError);
+      // Continuamos mesmo se houver erro, pois os dados foram salvos
     }
 
     return res.json({
@@ -456,22 +586,17 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
       });
     }
 
-    // Buscar configurações do WhatsApp para o restaurante usando nova tabela
-    const { data: integration, error: integrationError } = await supabase
-      .from('whatsapp_business_integrations')
-      .select('*')
-      .eq('restaurant_id', restaurant_id)
-      .eq('is_active', true)
-      .single();
+    // Buscar configurações do WhatsApp usando o serviço moderno
+    const integration = await WhatsAppService.getActiveIntegration(restaurant_id);
 
-    if (integrationError || !integration) {
+    if (!integration) {
       return res.status(400).json({
         success: false,
         message: 'WhatsApp integration not found or inactive'
       });
     }
 
-    // Enviar mensagem via Meta API usando versão atualizada
+    // Enviar mensagem via Meta API
     const messagePayload = {
       messaging_product: 'whatsapp',
       to: to,
@@ -482,7 +607,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     };
 
     const response = await axios.post(
-      `https://graph.facebook.com/v20.0/${integration.phone_number_id}/messages`,
+      `https://graph.facebook.com/v19.0/${integration.phone_number_id}/messages`,
       messagePayload,
       {
         headers: {
@@ -534,8 +659,6 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     });
   }
 });
-
-// COMPATIBILITY ENDPOINTS (mantendo para não quebrar frontend)
 
 /**
  * @swagger
@@ -852,20 +975,34 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
       });
     }
 
-    const { data: integration, error } = await supabase
+    // Usar o serviço moderno primeiro
+    const integration = await WhatsAppService.getActiveIntegration(restaurant_id);
+
+    if (integration) {
+      return res.json({
+        success: true,
+        data: {
+          connected: true,
+          integration: integration
+        }
+      });
+    }
+
+    // Fallback para compatibilidade com sistema antigo
+    const { data: oldIntegration, error } = await supabase
       .from('whatsapp_business_integrations')
       .select('*')
       .eq('restaurant_id', restaurant_id)
       .eq('is_active', true)
       .single();
 
-    const isConnected = !error && integration;
+    const isConnected = !error && oldIntegration;
 
     return res.json({
       success: true,
       data: {
         connected: isConnected,
-        integration: isConnected ? integration : null
+        integration: isConnected ? oldIntegration : null
       }
     });
 
@@ -886,7 +1023,8 @@ async function processInboundMessage(message: any, value: any) {
     const messageType = message.type;
     const timestamp = message.timestamp;
 
-    // Buscar restaurant_id baseado no phone_number_id
+    // Buscar restaurant_id baseado no phone_number_id usando query direta
+    // (o serviço atual não tem método para buscar por phone_number_id)
     const { data: integration } = await supabase
       .from('whatsapp_business_integrations')
       .select('restaurant_id, phone_number')

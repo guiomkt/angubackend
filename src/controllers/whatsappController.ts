@@ -1,14 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import WhatsAppService from '../services/whatsappService';
-import { createError } from '../middleware/errorHandler';
 
 export class WhatsAppController {
   /**
    * @swagger
-   * /api/whatsapp/integration/setup:
+   * /api/whatsapp/setup:
    *   post:
-   *     summary: Setup WhatsApp Business integration
+   *     summary: Setup WhatsApp integration
    *     tags: [WhatsApp]
    *     security:
    *       - bearerAuth: []
@@ -28,7 +27,7 @@ export class WhatsAppController {
    *                 description: WhatsApp Business Account ID
    *               phoneNumberId:
    *                 type: string
-   *                 description: Phone Number ID from Meta
+   *                 description: Phone Number ID from Meta API
    *               accessToken:
    *                 type: string
    *                 description: Access token from Meta OAuth
@@ -36,11 +35,9 @@ export class WhatsAppController {
    *       200:
    *         description: Integration setup successfully
    *       400:
-   *         description: Missing required parameters or setup failed
-   *       401:
-   *         description: Unauthorized
+   *         description: Missing required parameters
    *       500:
-   *         description: Internal server error
+   *         description: Setup failed
    */
   static async setupIntegration(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
@@ -48,11 +45,17 @@ export class WhatsAppController {
       const restaurantId = req.user?.restaurant_id;
 
       if (!restaurantId) {
-        throw createError('Restaurant not found', 400);
+        return res.status(400).json({
+          success: false,
+          message: 'Restaurant not found'
+        });
       }
 
       if (!wabaId || !phoneNumberId || !accessToken) {
-        throw createError('WABA ID, Phone Number ID, and Access Token are required', 400);
+        return res.status(400).json({
+          success: false,
+          message: 'WABA ID, Phone Number ID and Access Token are required'
+        });
       }
 
       const integrationId = await WhatsAppService.setupIntegration({
@@ -62,15 +65,18 @@ export class WhatsAppController {
         accessToken
       });
 
-      if (!integrationId) {
-        throw createError('Failed to setup WhatsApp integration', 500);
+      if (integrationId) {
+        return res.json({
+          success: true,
+          message: 'WhatsApp integration setup successfully',
+          integration_id: integrationId
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to setup WhatsApp integration'
+        });
       }
-
-      return res.json({
-        success: true,
-        message: 'WhatsApp integration setup successfully',
-        integrationId
-      });
 
     } catch (error) {
       return next(error);
@@ -87,18 +93,17 @@ export class WhatsAppController {
    *       - bearerAuth: []
    *     responses:
    *       200:
-   *         description: Integration status retrieved successfully
-   *       401:
-   *         description: Unauthorized
-   *       500:
-   *         description: Internal server error
+   *         description: Integration status retrieved
    */
   static async getIntegrationStatus(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const restaurantId = req.user?.restaurant_id;
 
       if (!restaurantId) {
-        throw createError('Restaurant not found', 400);
+        return res.status(400).json({
+          success: false,
+          message: 'Restaurant not found'
+        });
       }
 
       const integration = await WhatsAppService.getActiveIntegration(restaurantId);
@@ -107,7 +112,7 @@ export class WhatsAppController {
         success: true,
         data: {
           connected: !!integration,
-          integration: integration || null
+          integration: integration
         }
       });
 
@@ -118,7 +123,7 @@ export class WhatsAppController {
 
   /**
    * @swagger
-   * /api/whatsapp/messages/template:
+   * /api/whatsapp/template/send:
    *   post:
    *     summary: Send WhatsApp template message
    *     tags: [WhatsApp]
@@ -140,36 +145,34 @@ export class WhatsAppController {
    *                 description: Phone number in international format
    *               template_name:
    *                 type: string
-   *                 description: Name of the approved template
+   *                 description: Template name
    *               language:
    *                 type: string
-   *                 description: Language code (e.g., pt_BR, en_US)
+   *                 description: Language code (e.g. pt_BR)
    *               parameters:
    *                 type: array
    *                 description: Template parameters
-   *                 items:
-   *                   type: object
    *     responses:
    *       200:
    *         description: Template message sent successfully
-   *       400:
-   *         description: Missing required parameters
-   *       401:
-   *         description: Unauthorized
-   *       500:
-   *         description: Internal server error
    */
   static async sendTemplateMessage(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const { to, template_name, language, parameters } = req.body;
-      const restaurant_id = req.user?.restaurant_id;
+      const restaurantId = req.user?.restaurant_id;
 
-      if (!restaurant_id) {
-        throw createError('Restaurant not found', 400);
+      if (!restaurantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Restaurant not found'
+        });
       }
 
       if (!to || !template_name || !language) {
-        throw createError('Phone number, template name, and language are required', 400);
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number, template name and language are required'
+        });
       }
 
       const result = await WhatsAppService.sendTemplateMessage({
@@ -177,18 +180,10 @@ export class WhatsAppController {
         template_name,
         language,
         parameters,
-        restaurant_id
+        restaurant_id: restaurantId
       });
 
-      if (!result.success) {
-        throw createError(result.error || 'Failed to send template message', 500);
-      }
-
-      return res.json({
-        success: true,
-        message: 'Template message sent successfully',
-        data: result.data
-      });
+      return res.json(result);
 
     } catch (error) {
       return next(error);
