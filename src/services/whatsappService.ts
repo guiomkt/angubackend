@@ -1,28 +1,22 @@
-import { supabase } from '../config/database'; // Ajuste o caminho conforme seu projeto
+import { supabase } from '../config/database';
 import axios from 'axios';
 
 // --- Interfaces de Dados ---
 
 /**
  * Representa a estrutura da tabela `whatsapp_business_integrations` no Supabase.
- * Estrutura alinhada com a tabela existente no banco de dados.
  */
 interface WhatsAppIntegration {
   id: string;
   restaurant_id: string;
   business_account_id: string; // WABA ID
-  phone_number_id?: string | null; // nullable no banco
-  phone_number?: string | null; // nullable no banco
-  business_name?: string | null; // nullable no banco
-  verification_status?: string | null; // campo que existe no banco
+  phone_number_id: string;
+  phone_number: string;
+  business_name: string;
   access_token: string;
-  token_expires_at: string; // NOT NULL no banco
-  webhook_url?: string | null; // campo que existe no banco
-  webhook_verify_token?: string | null; // campo que existe no banco
+  token_expires_at: string | null;
   is_active: boolean;
-  last_webhook_trigger?: string | null; // campo que existe no banco
   connection_status: 'connected' | 'disconnected' | 'pending';
-  metadata?: any; // jsonb no banco
   created_at: string;
   updated_at: string;
 }
@@ -115,7 +109,7 @@ class WhatsAppService {
       return integrationId;
 
     } catch (error: any) {
-      console.error('Erro detalhado no processo de setup da integração:', error?.response?.data || error?.message || error);
+      console.error('Erro detalhado no processo de setup da integração:', error.response?.data || error.message || error);
       return null;
     }
   }
@@ -136,11 +130,11 @@ class WhatsAppService {
       console.log('App inscrito na WABA com sucesso.');
     } catch (error: any) {
       // Código de erro específico da Meta para "já inscrito". Consideramos isso um sucesso.
-      if (error?.response?.data?.error?.code === 100 && error?.response?.data?.error?.error_subcode === 2018001) {
+      if (error.response?.data?.error?.code === 100 && error.response?.data?.error?.error_subcode === 2018001) {
         console.log('App já estava inscrito na WABA. Continuando.');
         return;
       }
-      throw new Error(`Falha ao inscrever app na WABA: ${error?.response?.data?.error?.message || error?.message || 'Erro desconhecido'}`);
+      throw new Error(`Falha ao inscrever app na WABA: ${error.response?.data?.error?.message || 'Erro desconhecido'}`);
     }
   }
 
@@ -160,7 +154,7 @@ class WhatsAppService {
       console.log('Informações da WABA obtidas com sucesso.');
       return response.data;
     } catch (error: any) {
-      throw new Error(`Falha ao buscar informações da WABA: ${error?.response?.data?.error?.message || error?.message || 'Erro desconhecido'}`);
+      throw new Error(`Falha ao buscar informações da WABA: ${error.response?.data?.error?.message || 'Erro desconhecido'}`);
     }
   }
 
@@ -178,7 +172,7 @@ class WhatsAppService {
       console.log('Número de telefone registrado com sucesso.');
     } catch (error: any) {
        // É comum que o número já esteja registrado. Logamos como aviso, mas não paramos o fluxo.
-       console.warn(`Aviso ao registrar número: ${error?.response?.data?.error?.message || error?.message || 'Pode já estar registrado'}`);
+       console.warn(`Aviso ao registrar número: ${error.response?.data?.error?.message || 'Pode já estar registrado'}`);
     }
   }
 
@@ -197,8 +191,9 @@ class WhatsAppService {
       );
       console.log('Status do número de telefone verificado com sucesso.');
       return response.data;
-    } catch (error: any) {
-      throw new Error(`Falha ao verificar o número de telefone: ${error?.response?.data?.error?.message || error?.message || 'Erro desconhecido'}`);
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+      throw new Error(`Falha ao verificar o número de telefone: ${axiosError.response?.data?.error?.message || 'Erro desconhecido'}`);
     }
   }
 
@@ -218,15 +213,6 @@ class WhatsAppService {
     business_name: string;
   }): Promise<string> {
     const now = new Date().toISOString();
-    // Token válido por 90 dias por padrão
-    const expiresAt = new Date(Date.now() + (90 * 24 * 60 * 60 * 1000)).toISOString();
-    
-    // Primeiro, desativar qualquer integração ativa existente para este restaurante
-    await supabase
-      .from('whatsapp_business_integrations')
-      .update({ is_active: false, updated_at: now })
-      .eq('restaurant_id', data.restaurant_id)
-      .eq('is_active', true);
     
     const integrationRecord = {
       restaurant_id: data.restaurant_id,
@@ -235,16 +221,15 @@ class WhatsAppService {
       access_token: data.access_token,
       phone_number: data.phone_number,
       business_name: data.business_name,
-      token_expires_at: expiresAt, // Campo obrigatório no banco
       connection_status: 'connected',
       is_active: true,
       updated_at: now,
     };
 
-    // Inserir nova integração
+    // Usamos 'upsert' para criar ou atualizar a integração baseada no restaurant_id.
     const { data: result, error } = await supabase
       .from('whatsapp_business_integrations')
-      .insert(integrationRecord)
+      .upsert(integrationRecord, { onConflict: 'restaurant_id' })
       .select('id')
       .single();
 
@@ -284,8 +269,8 @@ class WhatsAppService {
 
       if (error) throw error;
       return data;
-    } catch (error: any) {
-      console.error('Erro ao buscar integração ativa do WhatsApp:', error?.message || error);
+    } catch (error) {
+      console.error('Erro ao buscar integração ativa do WhatsApp:', error);
       return null;
     }
   }
@@ -306,10 +291,6 @@ class WhatsAppService {
         throw new Error(`Nenhuma integração ativa encontrada para o restaurante ID: ${params.restaurant_id}`);
       }
 
-      if (!integration.phone_number_id) {
-        throw new Error(`Integração encontrada mas phone_number_id não está configurado para o restaurante ID: ${params.restaurant_id}`);
-      }
-
       const messagePayload = {
         messaging_product: 'whatsapp',
         to: params.to,
@@ -328,8 +309,9 @@ class WhatsAppService {
       );
 
       return { success: true, data: response.data };
-    } catch (error: any) {
-      console.error('Erro ao enviar mensagem de template:', error?.response?.data || error?.message || error);
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+      console.error('Erro ao enviar mensagem de template:', axiosError.response?.data || axiosError.message);
       return { success: false, error: 'Falha ao enviar mensagem de template.' };
     }
   }
