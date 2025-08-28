@@ -379,7 +379,7 @@ class WhatsAppService {
 
   /**
    * Inicia o fluxo de Embedded Signup da Meta para WhatsApp Business.
-   * Gera URL de autorização OAuth com escopos mínimos.
+   * Gera URL de autorização OAuth com escopos necessários.
    */
   public static async startEmbeddedSignup(userId: string, restaurantId: string): Promise<{
     authUrl: string;
@@ -391,29 +391,36 @@ class WhatsAppService {
         throw new Error('FACEBOOK_APP_ID não configurado');
       }
 
-      // Gerar state criptografado com informações do usuário
+      // Gerar state único e seguro
+      const randomString = Math.random().toString(36).substring(2, 15) + 
+                          Math.random().toString(36).substring(2, 15) + 
+                          Date.now().toString(36);
+
       const stateData = {
         userId,
         restaurantId,
         timestamp: Date.now(),
-        type: 'embedded_signup'
+        type: 'embedded_signup',
+        random: randomString
       };
 
       const encodedState = encodeURIComponent(JSON.stringify(stateData));
 
-      // URL de autorização com escopos mínimos para WhatsApp Business
+      // URL de autorização com escopos completos para WhatsApp Business
       const params = new URLSearchParams({
         client_id: clientId,
         redirect_uri: `${process.env.API_BASE_URL || 'https://api.angu.ai'}/api/whatsapp/oauth/callback`,
         state: encodedState,
-        scope: 'whatsapp_business_management,whatsapp_business_messaging',
+        scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_show_list,pages_read_engagement',
         response_type: 'code'
       });
 
       const authUrl = `https://www.facebook.com/${this.META_API_VERSION}/dialog/oauth?${params.toString()}`;
 
-      // Salvar estado inicial no banco
-      await this._saveSignupState(userId, restaurantId, 'pending');
+      // Salvar estado inicial no banco com state para validação
+      await this._saveSignupStateWithState(userId, restaurantId, 'pending', encodedState);
+
+      console.log('🔍 Embedded Signup iniciado:', { userId, restaurantId, state: encodedState.substring(0, 50) + '...' });
 
       return {
         authUrl,
@@ -428,41 +435,66 @@ class WhatsAppService {
 
   /**
    * Verifica o status atual do processo de Embedded Signup.
+   * Pode buscar por userId/restaurantId ou por state.
    */
-  public static async getEmbeddedSignupStatus(userId: string, restaurantId: string): Promise<{
-    status: 'pending' | 'waba_created' | 'phone_configured' | 'completed' | 'failed';
+  public static async getEmbeddedSignupStatus(
+    userId?: string, 
+    restaurantId?: string,
+    state?: string
+  ): Promise<{
+    status: 'pending' | 'oauth_completed' | 'waba_created' | 'phone_configured' | 'completed' | 'failed';
     waba_id?: string;
     phone_number_id?: string;
     phone_number?: string;
     business_name?: string;
     verification_status?: string;
+    business_id?: string;
+    needs_phone_registration?: boolean;
   }> {
     try {
-      // Buscar integração existente
-      const integration = await this.getActiveIntegration(restaurantId);
-      
-      if (integration) {
-        return {
-          status: 'completed',
-          waba_id: integration.business_account_id,
-          phone_number_id: integration.phone_number_id,
-          phone_number: integration.phone_number,
-          business_name: integration.business_name,
-          verification_status: 'verified'
-        };
-      }
+      let signupState: any = null;
 
-      // Buscar estado do processo de signup
-      const { data: signupState } = await supabase
-        .from('whatsapp_signup_states')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('restaurant_id', restaurantId)
-        .single();
+      // Buscar por state se fornecido
+      if (state) {
+        const { data } = await supabase
+          .from('whatsapp_signup_states')
+          .select('*')
+          .eq('state', state)
+          .single();
+        signupState = data;
+      }
+      // Senão, buscar por userId e restaurantId
+      else if (userId && restaurantId) {
+        // Buscar integração existente primeiro
+        const integration = await this.getActiveIntegration(restaurantId);
+        
+        if (integration) {
+          return {
+            status: 'completed',
+            waba_id: integration.business_account_id,
+            phone_number_id: integration.phone_number_id,
+            phone_number: integration.phone_number,
+            business_name: integration.business_name,
+            verification_status: 'verified'
+          };
+        }
+
+        // Buscar estado do processo de signup
+        const { data } = await supabase
+          .from('whatsapp_signup_states')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('restaurant_id', restaurantId)
+          .single();
+        signupState = data;
+      }
 
       if (!signupState) {
         return { status: 'pending' };
       }
+
+      // Determinar se precisa registrar número
+      const needsPhoneRegistration = signupState.waba_id && !signupState.phone_number_id;
 
       return {
         status: signupState.status as any,
@@ -470,7 +502,9 @@ class WhatsAppService {
         phone_number_id: signupState.phone_number_id,
         phone_number: signupState.phone_number,
         business_name: signupState.business_name,
-        verification_status: signupState.verification_status
+        business_id: signupState.business_id,
+        verification_status: signupState.verification_status,
+        needs_phone_registration: needsPhoneRegistration
       };
 
     } catch (error: any) {
@@ -666,6 +700,160 @@ class WhatsAppService {
     }
   }
 
+  /**
+   * Registra um novo número de telefone na WABA durante o Embedded Signup.
+   */
+  public static async registerPhoneNumber(
+    userId: string, 
+    restaurantId: string, 
+    phoneNumber: string, 
+    pin?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    phone_number_id?: string;
+  }> {
+    try {
+      // Buscar estado atual do signup
+      const { data: signupState } = await supabase
+        .from('whatsapp_signup_states')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('restaurant_id', restaurantId)
+        .single();
+
+      if (!signupState?.waba_id) {
+        throw new Error('WABA não encontrada. Complete o processo OAuth primeiro.');
+      }
+
+      if (!signupState?.access_token) {
+        throw new Error('Token de acesso não encontrado. Complete o processo OAuth primeiro.');
+      }
+
+      const usedPin = pin || this.PHONE_REGISTRATION_PIN;
+
+      // Registrar número via API da Meta
+      const registerResponse = await axios.post<{ id: string; display_phone_number: string; status: string }>(
+        `${this.META_GRAPH_URL}/${signupState.waba_id}/phone_numbers`,
+        {
+          messaging_product: 'whatsapp',
+          display_phone_number: phoneNumber,
+          pin: usedPin
+        },
+        {
+          headers: { 'Authorization': `Bearer ${signupState.access_token}` }
+        }
+      );
+
+      const phoneNumberId = registerResponse.data.id;
+
+      // Atualizar estado do signup
+      await this._updateSignupState(userId, restaurantId, {
+        phone_number_id: phoneNumberId,
+        phone_number: phoneNumber,
+        status: 'phone_configured',
+        verification_status: 'pending'
+      });
+
+      console.log('🔍 Número registrado com sucesso:', { phoneNumberId, phoneNumber });
+
+      return {
+        success: true,
+        message: 'Número registrado com sucesso. Código de verificação enviado via SMS.',
+        phone_number_id: phoneNumberId
+      };
+
+    } catch (error: any) {
+      console.error('Erro ao registrar número de telefone:', error);
+      throw new Error(`Falha ao registrar número: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Verifica o código de verificação do número de telefone.
+   */
+  public static async verifyPhoneNumberCode(
+    userId: string, 
+    restaurantId: string, 
+    phoneNumberId: string, 
+    verificationCode: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    integration_id?: string;
+  }> {
+    try {
+      // Buscar estado atual do signup
+      const { data: signupState } = await supabase
+        .from('whatsapp_signup_states')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('restaurant_id', restaurantId)
+        .single();
+
+      if (!signupState?.access_token) {
+        throw new Error('Token de acesso não encontrado.');
+      }
+
+      if (signupState.phone_number_id !== phoneNumberId) {
+        throw new Error('ID do número de telefone não corresponde ao processo atual.');
+      }
+
+      // Verificar código via API da Meta
+      await axios.post(
+        `${this.META_GRAPH_URL}/${phoneNumberId}/verify`,
+        {
+          messaging_product: 'whatsapp',
+          code: verificationCode
+        },
+        {
+          headers: { 'Authorization': `Bearer ${signupState.access_token}` }
+        }
+      );
+
+      // Buscar informações atualizadas do número
+      const phoneInfo = await axios.get<PhoneInfoResponse>(
+        `${this.META_GRAPH_URL}/${phoneNumberId}`,
+        {
+          params: { fields: 'verified_name,quality_rating,code_verification_status,display_phone_number,status' },
+          headers: { 'Authorization': `Bearer ${signupState.access_token}` }
+        }
+      );
+
+      // Criar integração completa
+      const integrationData = {
+        restaurant_id: restaurantId,
+        business_account_id: signupState.waba_id!,
+        phone_number_id: phoneNumberId,
+        access_token: signupState.access_token,
+        phone_number: phoneInfo.data.display_phone_number.replace(/\D/g, ''),
+        business_name: phoneInfo.data.verified_name || signupState.business_name || 'WhatsApp Business',
+        status: phoneInfo.data.status || 'CONNECTED'
+      };
+
+      const integrationId = await this._persistIntegrationData(integrationData);
+
+      // Atualizar estado para completado
+      await this._updateSignupState(userId, restaurantId, {
+        status: 'completed',
+        verification_status: 'verified',
+        business_name: phoneInfo.data.verified_name || signupState.business_name
+      });
+
+      console.log('🔍 Verificação de código concluída com sucesso:', { phoneNumberId, integrationId });
+
+      return {
+        success: true,
+        message: 'Verificação confirmada com sucesso. WhatsApp Business configurado!',
+        integration_id: integrationId
+      };
+
+    } catch (error: any) {
+      console.error('Erro ao verificar código do telefone:', error);
+      throw new Error(`Falha ao verificar código: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
   // --- MÉTODOS PRIVADOS AUXILIARES ---
 
   /**
@@ -691,6 +879,35 @@ class WhatsAppService {
 
     if (error) {
       console.error('Erro ao salvar estado do signup:', error);
+      throw new Error(`Falha ao salvar estado: ${error.message}`);
+    }
+  }
+
+  /**
+   * Salva o estado inicial do processo de signup com state para validação.
+   * @private
+   */
+  private static async _saveSignupStateWithState(
+    userId: string, 
+    restaurantId: string, 
+    status: string,
+    state: string
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    
+    const { error } = await supabase
+      .from('whatsapp_signup_states')
+      .upsert({
+        user_id: userId,
+        restaurant_id: restaurantId,
+        status,
+        state,
+        created_at: now,
+        updated_at: now
+      }, { onConflict: 'user_id,restaurant_id' });
+
+    if (error) {
+      console.error('Erro ao salvar estado do signup com state:', error);
       throw new Error(`Falha ao salvar estado: ${error.message}`);
     }
   }
