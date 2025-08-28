@@ -315,91 +315,54 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
 
-    // Buscar WhatsApp Business Account conectado às páginas
-    console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account...');
+    // 🎯 FLUXO CORRETO: Buscar WABA conectado às páginas
+    console.log('🔍 OAuth Callback - Iniciando busca por WABA...');
     
     let wabaId: string | null = null;
     let selectedPage: any = null;
 
-    // Primeiro, tentar buscar WABAs diretamente (abordagem alternativa)
-    try {
-      console.log('🔍 OAuth Callback - Tentando buscar WABAs diretamente...');
-      const directWABAResponse = await axios.get('https://graph.facebook.com/v22.0/me/businesses', {
-        headers: {
-          'Authorization': `Bearer ${access_token}`
-        }
-      });
-      console.log('🔍 OAuth Callback - Businesses encontrados:', JSON.stringify(directWABAResponse.data, null, 2));
-    } catch (error: any) {
-      console.warn('🔍 OAuth Callback - Não foi possível buscar businesses diretamente:', error.response?.data);
-    }
-
+    // Para cada página encontrada, verificar se tem WABA conectado
     for (const page of pages) {
       try {
-        console.log('🔍 OAuth Callback - Verificando página:', {
-          id: page.id,
-          name: page.name,
-          access_token: !!page.access_token
-        });
+        console.log(`🔍 OAuth Callback - Verificando página: ${page.name} (${page.id})`);
         
-        // Usar o token da página se disponível, senão usar o token do usuário
-        const pageToken = page.access_token || access_token;
+        // 🔑 PONTO CRÍTICO: Fazer a chamada EXATA que funciona
+        const requestUrl = `https://graph.facebook.com/v22.0/${page.id}?fields=connected_whatsapp_business_account`;
+        console.log(`🔍 OAuth Callback - Request: GET ${requestUrl}`);
+        console.log(`🔍 OAuth Callback - Authorization: Bearer <USER_ACCESS_TOKEN>`);
         
-        const wabaResponse = await axios.get(`https://graph.facebook.com/v22.0/${page.id}?fields=connected_whatsapp_business_account`, {
+        const wabaResponse = await axios.get(requestUrl, {
           headers: {
-            'Authorization': `Bearer ${pageToken}`
+            'Authorization': `Bearer ${access_token}`
           }
         });
 
-        console.log('🔍 OAuth Callback - Resposta WABA para página', page.name, ':', JSON.stringify(wabaResponse.data, null, 2));
+        console.log(`🔍 OAuth Callback - Response para ${page.name}:`, JSON.stringify(wabaResponse.data, null, 2));
 
-        const wabaData = wabaResponse.data as any;
-        
-        if (wabaData.connected_whatsapp_business_account) {
-          wabaId = wabaData.connected_whatsapp_business_account.id;
+        // Verificar se a resposta contém WABA conectado
+        const responseData = wabaResponse.data as any;
+        if (responseData.connected_whatsapp_business_account) {
+          wabaId = responseData.connected_whatsapp_business_account.id;
           selectedPage = page;
-          console.log('🔍 OAuth Callback - ✅ WhatsApp Business Account encontrado!', {
+          
+          console.log('🔍 OAuth Callback - ✅ WABA ENCONTRADO!', {
             pageId: page.id,
             pageName: page.name,
             wabaId: wabaId
           });
           break;
         } else {
-          console.log('🔍 OAuth Callback - ❌ Página sem WABA conectado:', page.name);
+          console.log(`🔍 OAuth Callback - ❌ Página ${page.name} sem WABA conectado`);
         }
+        
       } catch (error: any) {
-        console.error('🔍 OAuth Callback - Erro ao verificar página:', {
-          pageName: page.name,
-          error: {
-            status: error.response?.status,
-            data: error.response?.data,
-            message: error.message
-          }
+        console.error(`🔍 OAuth Callback - Erro ao verificar página ${page.name}:`, {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message
         });
         continue;
-      }
-    }
-
-    if (!wabaId) {
-      // Última tentativa: buscar WABAs diretamente se tiver acesso
-      try {
-        console.log('🔍 OAuth Callback - Última tentativa: buscando WABAs via owned_whatsapp_business_accounts...');
-        const wabaDirectResponse = await axios.get('https://graph.facebook.com/v22.0/me?fields=owned_whatsapp_business_accounts', {
-          headers: {
-            'Authorization': `Bearer ${access_token}`
-          }
-        });
-        
-        console.log('🔍 OAuth Callback - Owned WABAs response:', JSON.stringify(wabaDirectResponse.data, null, 2));
-        
-        const ownedData = wabaDirectResponse.data as any;
-        if (ownedData.owned_whatsapp_business_accounts?.data?.length > 0) {
-          const ownedWaba = ownedData.owned_whatsapp_business_accounts.data[0];
-          wabaId = ownedWaba.id;
-          console.log('🔍 OAuth Callback - ✅ Encontrado WABA owned diretamente:', wabaId);
-        }
-      } catch (error: any) {
-        console.warn('🔍 OAuth Callback - Não foi possível buscar owned WABAs:', error.response?.data);
       }
     }
 
@@ -429,22 +392,36 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
 
-    // Buscar phone numbers (como no exemplo funcional)
-    const phoneResponse = await axios.get(`https://graph.facebook.com/v22.0/${wabaId}/phone_numbers`, {
+    // 🎯 PRÓXIMO PASSO: Buscar números de telefone do WABA
+    console.log(`🔍 OAuth Callback - Buscando números de telefone do WABA: ${wabaId}`);
+    
+    const phoneRequestUrl = `https://graph.facebook.com/v22.0/${wabaId}/phone_numbers`;
+    console.log(`🔍 OAuth Callback - Request: GET ${phoneRequestUrl}`);
+    console.log(`🔍 OAuth Callback - Authorization: Bearer <USER_ACCESS_TOKEN>`);
+    
+    const phoneResponse = await axios.get(phoneRequestUrl, {
       headers: {
         'Authorization': `Bearer ${access_token}`
       }
     });
 
+    console.log('🔍 OAuth Callback - Phone numbers response:', JSON.stringify(phoneResponse.data, null, 2));
+
     const phoneData = phoneResponse.data as PhoneNumberResponse;
     const phoneNumber = phoneData.data[0];
 
     if (!phoneNumber) {
+      console.error('🔍 OAuth Callback - ❌ Nenhum número de telefone encontrado no WABA');
       return res.status(400).json({
         success: false,
-        message: 'No phone number found'
+        message: 'No phone number found in WhatsApp Business Account'
       });
     }
+
+    console.log('🔍 OAuth Callback - ✅ Número de telefone encontrado:', {
+      phoneId: phoneNumber.id,
+      phoneNumber: phoneNumber.display_phone_number
+    });
 
     // Salvar integração usando o serviço moderno
     console.log('🔍 OAuth Callback - Salvando no banco de dados usando serviço moderno...');
