@@ -239,6 +239,25 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       });
     }
 
+    // Verificar se é um processo de Embedded Signup
+    let isEmbeddedSignup = false;
+    let stateData: any = null;
+    
+    if (state) {
+      try {
+        stateData = JSON.parse(decodeURIComponent(state as string));
+        isEmbeddedSignup = stateData.type === 'embedded_signup';
+        console.log('🔍 OAuth Callback - Tipo de processo detectado:', { 
+          type: stateData.type, 
+          isEmbeddedSignup,
+          userId: stateData.userId,
+          restaurantId: stateData.restaurantId
+        });
+      } catch (error) {
+        console.log('🔍 OAuth Callback - State não é JSON válido, continuando com fluxo padrão');
+      }
+    }
+
     // Trocar o code por access_token
     console.log('🔍 OAuth Callback - Iniciando troca de code por token...');
     
@@ -265,7 +284,65 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // Calcular data de expiração
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
-        // Buscar páginas do Facebook do usuário (como no exemplo funcional)
+    // Se for Embedded Signup, processar fluxo específico
+    if (isEmbeddedSignup && stateData?.userId && stateData?.restaurantId) {
+      console.log('🔍 OAuth Callback - Processando fluxo de Embedded Signup...');
+      
+      try {
+        // Salvar token OAuth do usuário
+        const { error: tokenError } = await supabase
+          .from('meta_tokens')
+          .upsert({
+            user_id: stateData.userId,
+            oauth_access_token: access_token,
+            oauth_token_expires_at: expiresAt.toISOString(),
+            oauth_token_type: 'long_lived',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'user_id' });
+
+        if (tokenError) {
+          console.error('🔍 OAuth Callback - Erro ao salvar token:', tokenError);
+          throw new Error(`Falha ao salvar token: ${tokenError.message}`);
+        }
+
+        // Buscar ou criar WABA
+        let wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.userId, stateData.restaurantId);
+        
+        // Atualizar estado do signup
+        await supabase
+          .from('whatsapp_signup_states')
+          .update({
+            waba_id: wabaId,
+            status: 'waba_created',
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', stateData.userId)
+          .eq('restaurant_id', stateData.restaurantId);
+
+        console.log('🔍 OAuth Callback - Embedded Signup processado com sucesso');
+        
+        return res.json({
+          success: true,
+          message: 'WhatsApp Business Embedded Signup iniciado com sucesso',
+          data: {
+            waba_id: wabaId,
+            next_step: 'verify_phone',
+            redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=signup_started`
+          }
+        });
+
+      } catch (error: any) {
+        console.error('🔍 OAuth Callback - Erro no Embedded Signup:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Erro ao processar Embedded Signup',
+          error: error.message
+        });
+      }
+    }
+
+    // Buscar páginas do Facebook do usuário (como no exemplo funcional)
     console.log('🔍 OAuth Callback - Buscando páginas do Facebook...');
     
     // Primeiro, vamos verificar as permissões do token
@@ -1125,6 +1202,307 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
     return res.status(500).json({
       success: false,
       message: 'Failed to check OAuth status'
+    });
+  }
+});
+
+// --- NOVAS ROTAS PARA EMBEDDED SIGNUP META ---
+
+/**
+ * @swagger
+ * /api/whatsapp/signup/start:
+ *   get:
+ *     summary: Inicia o fluxo de Embedded Signup da Meta para WhatsApp Business
+ *     description: |
+ *       Gera URL de autorização OAuth com escopos mínimos para conectar WhatsApp Business.
+ *       Esta rota inicia o processo de configuração de uma nova conta WhatsApp Business
+ *       através do fluxo oficial da Meta de Embedded Signup.
+ *       
+ *       **Escopos solicitados:**
+ *       - whatsapp_business_management
+ *       - whatsapp_business_messaging
+ *       
+ *       **Fluxo:**
+ *       1. Usuário chama esta rota
+ *       2. Sistema gera URL de autorização Meta
+ *       3. Usuário é redirecionado para Facebook
+ *       4. Após autorização, Facebook redireciona para callback
+ *       5. Sistema processa tokens e configura WhatsApp Business
+ *     tags: [WhatsApp, Embedded Signup]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: URL de autorização gerada com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     authUrl:
+ *                       type: string
+ *                       description: URL de autorização da Meta
+ *                     state:
+ *                       type: string
+ *                       description: Estado criptografado para validação
+ *       401:
+ *         description: Token de autenticação inválido ou expirado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/signup/start', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário ou restaurante não encontrado'
+      });
+    }
+
+    const result = await WhatsAppService.startEmbeddedSignup(userId, restaurantId);
+    
+    return res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao iniciar Embedded Signup:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao iniciar configuração do WhatsApp Business',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/signup/status:
+ *   get:
+ *     summary: Verifica o status do processo de Embedded Signup
+ *     description: |
+ *       Retorna o status atual do processo de configuração do WhatsApp Business,
+ *       incluindo informações sobre WABA, números de telefone e status de verificação.
+ *     tags: [WhatsApp, Embedded Signup]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Status verificado com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     status:
+ *                       type: string
+ *                       enum: [pending, waba_created, phone_configured, completed, failed]
+ *                     waba_id:
+ *                       type: string
+ *                       description: ID da conta WhatsApp Business
+ *                     phone_number_id:
+ *                       type: string
+ *                       description: ID do número de telefone
+ *                     phone_number:
+ *                       type: string
+ *                       description: Número de telefone formatado
+ *                     business_name:
+ *                       type: string
+ *                       description: Nome do negócio
+ *                     verification_status:
+ *                       type: string
+ *                       description: Status da verificação
+ *       401:
+ *         description: Token de autenticação inválido ou expirado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.get('/signup/status', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário ou restaurante não encontrado'
+      });
+    }
+
+    const status = await WhatsAppService.getEmbeddedSignupStatus(userId, restaurantId);
+    
+    return res.json({
+      success: true,
+      data: status
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao verificar status do Embedded Signup:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao verificar status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/signup/verify-phone:
+ *   post:
+ *   summary: Verifica um número de telefone para WhatsApp Business
+ *   description: |
+ *     Envia código de verificação via SMS/ligação para validar um número de telefone
+ *     durante o processo de Embedded Signup.
+ *   tags: [WhatsApp, Embedded Signup]
+ *   security:
+ *     - bearerAuth: []
+ *   requestBody:
+ *     required: true
+ *     content:
+ *       application/json:
+ *         schema:
+ *           type: object
+ *           required:
+ *             - phone_number
+ *           properties:
+ *             phone_number:
+ *               type: string
+ *               description: Número de telefone a ser verificado (formato internacional)
+ *               example: "+5511999999999"
+ *   responses:
+ *     200:
+ *       description: Código de verificação enviado com sucesso
+ *     400:
+ *       description: Dados inválidos
+ *     401:
+ *       description: Token de autenticação inválido ou expirado
+ *     500:
+ *       description: Erro interno do servidor
+ */
+router.post('/signup/verify-phone', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+    const { phone_number } = req.body;
+
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário ou restaurante não encontrado'
+      });
+    }
+
+    if (!phone_number) {
+      return res.status(400).json({
+        success: false,
+        message: 'Número de telefone é obrigatório'
+      });
+    }
+
+    const result = await WhatsAppService.verifyPhoneNumber(userId, restaurantId, phone_number);
+    
+    return res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao verificar número de telefone:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao verificar número',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/signup/confirm-verification:
+ *   post:
+ *   summary: Confirma o código de verificação do número de telefone
+ *   description: |
+ *     Confirma o código de verificação recebido via SMS/ligação para validar
+ *     o número de telefone durante o processo de Embedded Signup.
+ *   tags: [WhatsApp, Embedded Signup]
+ *   security:
+ *     - bearerAuth: []
+ *   requestBody:
+ *     required: true
+ *     content:
+ *       application/json:
+ *         schema:
+ *           type: object
+ *           required:
+ *             - phone_number
+ *             - verification_code
+ *           properties:
+ *             phone_number:
+ *               type: string
+ *               description: Número de telefone sendo verificado
+ *               example: "+5511999999999"
+ *             verification_code:
+ *               type: string
+ *               description: Código de verificação recebido
+ *               example: "123456"
+ *   responses:
+ *     200:
+ *       description: Verificação confirmada com sucesso
+ *     400:
+ *       description: Dados inválidos ou código incorreto
+ *     401:
+ *       description: Token de autenticação inválido ou expirado
+ *     500:
+ *       description: Erro interno do servidor
+ */
+router.post('/signup/confirm-verification', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+    const { phone_number, verification_code } = req.body;
+
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário ou restaurante não encontrado'
+      });
+    }
+
+    if (!phone_number || !verification_code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Número de telefone e código de verificação são obrigatórios'
+      });
+    }
+
+    const result = await WhatsAppService.confirmPhoneVerification(userId, restaurantId, phone_number, verification_code);
+    
+    return res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao confirmar verificação:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao confirmar verificação',
+      error: error.message
     });
   }
 });
