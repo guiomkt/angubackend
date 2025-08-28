@@ -63,7 +63,7 @@ interface PhoneNumberStatusResponse {
 // --- Classe de Serviço ---
 
 class WhatsAppService {
-  private static readonly META_API_VERSION = 'v20.0';
+  private static readonly META_API_VERSION = 'v22.0';
   private static readonly META_GRAPH_URL = `https://graph.facebook.com/${this.META_API_VERSION}`;
   private static readonly PHONE_REGISTRATION_PIN = "152563"; // Mantenha o PIN consistente com o da sua configuração Meta
 
@@ -191,9 +191,8 @@ class WhatsAppService {
       );
       console.log('Status do número de telefone verificado com sucesso.');
       return response.data;
-    } catch (error) {
-      const axiosError = error as AxiosError<any>;
-      throw new Error(`Falha ao verificar o número de telefone: ${axiosError.response?.data?.error?.message || 'Erro desconhecido'}`);
+    } catch (error: any) {
+      throw new Error(`Falha ao verificar o número de telefone: ${error.response?.data?.error?.message || 'Erro desconhecido'}`);
     }
   }
 
@@ -309,9 +308,8 @@ class WhatsAppService {
       );
 
       return { success: true, data: response.data };
-    } catch (error) {
-      const axiosError = error as AxiosError<any>;
-      console.error('Erro ao enviar mensagem de template:', axiosError.response?.data || axiosError.message);
+    } catch (error: any) {
+      console.error('Erro ao enviar mensagem de template:', error.response?.data || error.message);
       return { success: false, error: 'Falha ao enviar mensagem de template.' };
     }
   }
