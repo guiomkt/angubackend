@@ -248,7 +248,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
     
-    const tokenResponse = await axios.post('https://graph.facebook.com/v19.0/oauth/access_token', {
+    const tokenResponse = await axios.post('https://graph.facebook.com/v22.0/oauth/access_token', {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
@@ -268,9 +268,21 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         // Buscar páginas do Facebook do usuário (como no exemplo funcional)
     console.log('🔍 OAuth Callback - Buscando páginas do Facebook...');
     
+    // Primeiro, vamos verificar as permissões do token
+    try {
+      const permissionsResponse = await axios.get('https://graph.facebook.com/v22.0/me/permissions', {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
+        }
+      });
+      console.log('🔍 OAuth Callback - Permissões do token:', permissionsResponse.data);
+    } catch (error: any) {
+      console.warn('🔍 OAuth Callback - Não foi possível verificar permissões:', error.response?.data);
+    }
+
     let pagesResponse: any;
     try {
-      pagesResponse = await axios.get('https://graph.facebook.com/v20.0/me/accounts', {
+      pagesResponse = await axios.get('https://graph.facebook.com/v22.0/me/accounts', {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -278,7 +290,9 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
       console.log('🔍 OAuth Callback - Pages response recebido:', { 
         success: !!pagesResponse.data, 
-        hasData: !!(pagesResponse.data as any).data 
+        hasData: !!(pagesResponse.data as any).data,
+        pagesCount: (pagesResponse.data as any).data?.length || 0,
+        pagesData: JSON.stringify((pagesResponse.data as any).data, null, 2)
       });
     } catch (error: any) {
       console.error('🔍 OAuth Callback - Erro ao buscar páginas:', {
@@ -301,47 +315,122 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
 
-    // Buscar WhatsApp Business Account conectado à primeira página (como no exemplo funcional)
+    // Buscar WhatsApp Business Account conectado às páginas
     console.log('🔍 OAuth Callback - Buscando WhatsApp Business Account...');
     
     let wabaId: string | null = null;
     let selectedPage: any = null;
 
+    // Primeiro, tentar buscar WABAs diretamente (abordagem alternativa)
+    try {
+      console.log('🔍 OAuth Callback - Tentando buscar WABAs diretamente...');
+      const directWABAResponse = await axios.get('https://graph.facebook.com/v22.0/me/businesses', {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
+        }
+      });
+      console.log('🔍 OAuth Callback - Businesses encontrados:', JSON.stringify(directWABAResponse.data, null, 2));
+    } catch (error: any) {
+      console.warn('🔍 OAuth Callback - Não foi possível buscar businesses diretamente:', error.response?.data);
+    }
+
     for (const page of pages) {
       try {
-        console.log('🔍 OAuth Callback - Verificando página:', page.name);
+        console.log('🔍 OAuth Callback - Verificando página:', {
+          id: page.id,
+          name: page.name,
+          access_token: !!page.access_token
+        });
         
-        const wabaResponse = await axios.get(`https://graph.facebook.com/v20.0/${page.id}?fields=connected_whatsapp_business_account`, {
+        // Usar o token da página se disponível, senão usar o token do usuário
+        const pageToken = page.access_token || access_token;
+        
+        const wabaResponse = await axios.get(`https://graph.facebook.com/v22.0/${page.id}?fields=connected_whatsapp_business_account`, {
           headers: {
-            'Authorization': `Bearer ${access_token}`
+            'Authorization': `Bearer ${pageToken}`
           }
         });
+
+        console.log('🔍 OAuth Callback - Resposta WABA para página', page.name, ':', JSON.stringify(wabaResponse.data, null, 2));
 
         const wabaData = wabaResponse.data as any;
         
         if (wabaData.connected_whatsapp_business_account) {
           wabaId = wabaData.connected_whatsapp_business_account.id;
           selectedPage = page;
-          console.log('🔍 OAuth Callback - WhatsApp Business Account encontrado na página:', page.name);
+          console.log('🔍 OAuth Callback - ✅ WhatsApp Business Account encontrado!', {
+            pageId: page.id,
+            pageName: page.name,
+            wabaId: wabaId
+          });
           break;
+        } else {
+          console.log('🔍 OAuth Callback - ❌ Página sem WABA conectado:', page.name);
         }
       } catch (error: any) {
-        console.log('🔍 OAuth Callback - Página sem WhatsApp Business:', page.name);
+        console.error('🔍 OAuth Callback - Erro ao verificar página:', {
+          pageName: page.name,
+          error: {
+            status: error.response?.status,
+            data: error.response?.data,
+            message: error.message
+          }
+        });
         continue;
       }
     }
 
     if (!wabaId) {
+      // Última tentativa: buscar WABAs diretamente se tiver acesso
+      try {
+        console.log('🔍 OAuth Callback - Última tentativa: buscando WABAs via owned_whatsapp_business_accounts...');
+        const wabaDirectResponse = await axios.get('https://graph.facebook.com/v22.0/me?fields=owned_whatsapp_business_accounts', {
+          headers: {
+            'Authorization': `Bearer ${access_token}`
+          }
+        });
+        
+        console.log('🔍 OAuth Callback - Owned WABAs response:', JSON.stringify(wabaDirectResponse.data, null, 2));
+        
+        const ownedData = wabaDirectResponse.data as any;
+        if (ownedData.owned_whatsapp_business_accounts?.data?.length > 0) {
+          const ownedWaba = ownedData.owned_whatsapp_business_accounts.data[0];
+          wabaId = ownedWaba.id;
+          console.log('🔍 OAuth Callback - ✅ Encontrado WABA owned diretamente:', wabaId);
+        }
+      } catch (error: any) {
+        console.warn('🔍 OAuth Callback - Não foi possível buscar owned WABAs:', error.response?.data);
+      }
+    }
+
+    if (!wabaId) {
+      console.error('🔍 OAuth Callback - ❌ NENHUM WABA ENCONTRADO - Diagnóstico:', {
+        pagesFound: pages?.length || 0,
+        pagesWithTokens: pages?.filter((p: any) => !!p.access_token)?.length || 0,
+        accessTokenValid: !!access_token
+      });
+      
       return res.status(400).json({
         success: false,
-        message: 'No WhatsApp Business Account found. Make sure one of your Facebook pages has WhatsApp Business connected.'
+        message: `No WhatsApp Business Account found. Diagnóstico:
+- Páginas encontradas: ${pages?.length || 0}
+- Para conectar WhatsApp Business: 
+  1. Acesse https://business.facebook.com/
+  2. Vá em Configurações > Contas do WhatsApp Business
+  3. Conecte uma conta WhatsApp Business à sua página
+  4. Certifique-se de que você é admin da página e da WABA
+- Se já tem WABA conectado, verifique as permissões do app no Facebook Developer Console`,
+        debug: {
+          pages_found: pages?.length || 0,
+          token_permissions_needed: ['whatsapp_business_management', 'whatsapp_business_messaging', 'pages_read_engagement']
+        }
       });
     }
 
     console.log('🔍 OAuth Callback - WhatsApp Business Account ID:', wabaId);
 
     // Buscar phone numbers (como no exemplo funcional)
-    const phoneResponse = await axios.get(`https://graph.facebook.com/v20.0/${wabaId}/phone_numbers`, {
+    const phoneResponse = await axios.get(`https://graph.facebook.com/v22.0/${wabaId}/phone_numbers`, {
       headers: {
         'Authorization': `Bearer ${access_token}`
       }
@@ -607,7 +696,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     };
 
     const response = await axios.post(
-      `https://graph.facebook.com/v19.0/${integration.phone_number_id}/messages`,
+      `https://graph.facebook.com/v22.0/${integration.phone_number_id}/messages`,
       messagePayload,
       {
         headers: {
