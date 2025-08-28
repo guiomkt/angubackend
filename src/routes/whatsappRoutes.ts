@@ -267,7 +267,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
     
-    const tokenResponse = await axios.post('https://graph.facebook.com/v22.0/oauth/access_token', {
+    const tokenResponse = await axios.post(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/oauth/access_token`, {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
@@ -320,7 +320,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         try {
           const wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.userId, stateData.restaurantId);
           
-          // WABA encontrada - atualizar estado
+          // WABA encontrada ou criada - atualizar estado
           await supabase
             .from('whatsapp_signup_states')
             .update({
@@ -330,7 +330,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
             })
             .eq('state', state as string);
 
-          console.log('🔍 OAuth Callback - ✅ WABA encontrada:', { wabaId, state: state as string });
+          console.log('🔍 OAuth Callback - ✅ WABA encontrada/criada:', { wabaId, state: state as string });
           
           return res.json({
             success: true,
@@ -346,7 +346,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
         } catch (wabaError: any) {
           if (wabaError.message === 'WABA_NOT_FOUND') {
-            console.log('🔍 OAuth Callback - ❌ WABA não encontrada, aguardando criação pelo usuário');
+            console.log('🔍 OAuth Callback - ❌ WABA não encontrada e criação automática falhou, aguardando criação pelo usuário');
             
             return res.json({
               success: true,
@@ -399,7 +399,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     // Primeiro, vamos verificar as permissões do token
     try {
-      const permissionsResponse = await axios.get('https://graph.facebook.com/v22.0/me/permissions', {
+      const permissionsResponse = await axios.get(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/permissions`, {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -411,7 +411,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     let pagesResponse: any;
     try {
-      pagesResponse = await axios.get('https://graph.facebook.com/v22.0/me/accounts', {
+      pagesResponse = await axios.get(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/accounts`, {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -444,54 +444,88 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     console.log('🔍 OAuth Callback - Páginas encontradas:', pages.length);
 
-    // 🎯 FLUXO CORRETO: Buscar WABA conectado às páginas
+    // 🎯 FLUXO CORRETO: Buscar WABA com estratégia dupla
     console.log('🔍 OAuth Callback - Iniciando busca por WABA...');
     
     let wabaId: string | null = null;
     let selectedPage: any = null;
 
-    // Para cada página encontrada, verificar se tem WABA conectado
-    for (const page of pages) {
-      try {
-        console.log(`🔍 OAuth Callback - Verificando página: ${page.name} (${page.id})`);
-        
-        // 🔑 PONTO CRÍTICO: Fazer a chamada EXATA que funciona
-        const requestUrl = `https://graph.facebook.com/v22.0/${page.id}?fields=connected_whatsapp_business_account`;
-        console.log(`🔍 OAuth Callback - Request: GET ${requestUrl}`);
-        console.log(`🔍 OAuth Callback - Authorization: Bearer <USER_ACCESS_TOKEN>`);
-        
-        const wabaResponse = await axios.get(requestUrl, {
-          headers: {
-            'Authorization': `Bearer ${access_token}`
-          }
-        });
-
-        console.log(`🔍 OAuth Callback - Response para ${page.name}:`, JSON.stringify(wabaResponse.data, null, 2));
-
-        // Verificar se a resposta contém WABA conectado
-        const responseData = wabaResponse.data as any;
-        if (responseData.connected_whatsapp_business_account) {
-          wabaId = responseData.connected_whatsapp_business_account.id;
-          selectedPage = page;
-          
-          console.log('🔍 OAuth Callback - ✅ WABA ENCONTRADO!', {
-            pageId: page.id,
-            pageName: page.name,
-            wabaId: wabaId
-          });
-          break;
-        } else {
-          console.log(`🔍 OAuth Callback - ❌ Página ${page.name} sem WABA conectado`);
+    // ESTRATÉGIA 1: Buscar WABAs diretamente do usuário (fonte primária)
+    console.log('🔍 OAuth Callback - ESTRATÉGIA 1: Buscando WABAs direto do usuário...');
+    try {
+      const directWabaResponse = await axios.get<{data: Array<{id: string; name: string; status: string}>}>(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/whatsapp_business_accounts`, {
+        headers: {
+          'Authorization': `Bearer ${access_token}`
         }
+      });
+
+      console.log('🔍 OAuth Callback - Response WABAs diretos:', JSON.stringify(directWabaResponse.data, null, 2));
+
+      if (directWabaResponse.data?.data && directWabaResponse.data.data.length > 0) {
+        const directWaba = directWabaResponse.data.data[0];
+        wabaId = directWaba.id;
         
-      } catch (error: any) {
-        console.error(`🔍 OAuth Callback - Erro ao verificar página ${page.name}:`, {
-          status: error.response?.status,
-          statusText: error.response?.statusText,
-          data: error.response?.data,
-          message: error.message
+        console.log('🔍 OAuth Callback - ✅ WABA ENCONTRADO VIA ESTRATÉGIA 1!', {
+          wabaId: wabaId,
+          wabaName: directWaba.name
         });
-        continue;
+      } else {
+        console.log('🔍 OAuth Callback - ❌ Nenhuma WABA encontrada via estratégia 1');
+      }
+    } catch (error: any) {
+      console.log('🔍 OAuth Callback - ❌ Erro na estratégia 1:', error.response?.data || error.message);
+    }
+
+    // ESTRATÉGIA 2: Fallback via páginas (só se não encontrou na estratégia 1)
+    if (!wabaId) {
+      console.log('🔍 OAuth Callback - ESTRATÉGIA 2: Fallback via páginas...');
+      
+      // Para cada página encontrada, verificar se tem WABA conectado
+      for (const page of pages) {
+        try {
+          console.log(`🔍 OAuth Callback - Verificando página: ${page.name} (${page.id})`);
+          
+          const requestUrl = `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${page.id}?fields=connected_whatsapp_business_account`;
+          console.log(`🔍 OAuth Callback - Request: GET ${requestUrl}`);
+          
+          const wabaResponse = await axios.get(requestUrl, {
+            headers: {
+              'Authorization': `Bearer ${access_token}`
+            }
+          });
+
+          console.log(`🔍 OAuth Callback - Response para ${page.name}:`, JSON.stringify(wabaResponse.data, null, 2));
+
+          // Verificar se a resposta contém WABA conectado
+          const responseData = wabaResponse.data as any;
+          if (responseData.connected_whatsapp_business_account) {
+            wabaId = responseData.connected_whatsapp_business_account.id;
+            selectedPage = page;
+            
+            console.log('🔍 OAuth Callback - ✅ WABA ENCONTRADO VIA ESTRATÉGIA 2!', {
+              pageId: page.id,
+              pageName: page.name,
+              wabaId: wabaId
+            });
+            break;
+          } else {
+            console.log(`🔍 OAuth Callback - ❌ Página ${page.name} sem WABA conectado`);
+          }
+          
+        } catch (error: any) {
+          // Ignorar erro 100 (campo não existe) - é esperado quando página não tem WABA
+          if (error.response?.data?.error?.code === 100) {
+            console.log(`🔍 OAuth Callback - Página ${page.name} não possui campo connected_whatsapp_business_account (esperado)`);
+          } else {
+            console.error(`🔍 OAuth Callback - Erro ao verificar página ${page.name}:`, {
+              status: error.response?.status,
+              statusText: error.response?.statusText,
+              data: error.response?.data,
+              message: error.message
+            });
+          }
+          continue;
+        }
       }
     }
 
@@ -572,7 +606,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // 🎯 PRÓXIMO PASSO: Buscar números de telefone do WABA
     console.log(`🔍 OAuth Callback - Buscando números de telefone do WABA: ${wabaId}`);
     
-    const phoneRequestUrl = `https://graph.facebook.com/v22.0/${wabaId}/phone_numbers`;
+            const phoneRequestUrl = `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${wabaId}/phone_numbers`;
     console.log(`🔍 OAuth Callback - Request: GET ${phoneRequestUrl}`);
     console.log(`🔍 OAuth Callback - Authorization: Bearer <USER_ACCESS_TOKEN>`);
     
@@ -850,7 +884,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     };
 
     const response = await axios.post(
-      `https://graph.facebook.com/v22.0/${integration.phone_number_id}/messages`,
+              `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${integration.phone_number_id}/messages`,
       messagePayload,
       {
         headers: {
