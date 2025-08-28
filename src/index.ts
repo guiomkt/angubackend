@@ -477,6 +477,20 @@ app.use(compression());
 app.use(morgan('combined'));
 // app.use(limiter); // ⚠️ Rate limiting desabilitado temporariamente - reative antes da produção!
 
+// Rota raiz - Redireciona para documentação
+app.get('/', (req, res) => {
+  res.redirect('/api-docs');
+});
+
+// Bloquear acesso a arquivos sensíveis
+app.use('/.git', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+app.use('/.env', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 // Health check endpoint - Otimizado para Railway
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'UP' });
