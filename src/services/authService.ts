@@ -56,6 +56,9 @@ interface FacebookBusinessAccountsResponse {
   };
 }
 
+// Centralizar versão da API Meta
+const META_API_VERSION = 'v22.0';
+
 export class AuthService {
   private static readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
   private static readonly JWT_EXPIRES_IN = '7d';
@@ -527,7 +530,7 @@ export class AuthService {
         scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
       });
 
-      const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`;
+      const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?${params.toString()}`;
 
       return {
         authUrl,
@@ -572,7 +575,7 @@ export class AuthService {
       scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
     });
 
-    const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`;
+    const authUrl = `https://www.facebook.com/${META_API_VERSION}/dialog/oauth?${params.toString()}`;
     
     return authUrl;
   }
@@ -697,7 +700,7 @@ export class AuthService {
           : `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`
         );
 
-      const tokenResponse = await fetch('https://graph.facebook.com/v20.0/oauth/access_token', {
+      const tokenResponse = await fetch(`https://graph.facebook.com/${META_API_VERSION}/oauth/access_token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -717,7 +720,7 @@ export class AuthService {
       }
 
       // Trocar por long-lived token
-      const longLivedResponse = await fetch('https://graph.facebook.com/v20.0/oauth/access_token', {
+      const longLivedResponse = await fetch(`https://graph.facebook.com/${META_API_VERSION}/oauth/access_token`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -731,7 +734,7 @@ export class AuthService {
         fb_exchange_token: tokenData.access_token
       });
 
-      const longLivedUrl = `https://graph.facebook.com/v20.0/oauth/access_token?${longLivedParams.toString()}`;
+      const longLivedUrl = `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token?${longLivedParams.toString()}`;
       const longLivedData = await fetch(longLivedUrl).then(res => res.json()) as FacebookLongLivedTokenResponse;
 
       if (longLivedData.error) {
@@ -739,7 +742,7 @@ export class AuthService {
       }
 
       // Buscar contas de negócio
-      const accountsResponse = await fetch(`https://graph.facebook.com/v20.0/me/accounts?access_token=${longLivedData.access_token}`);
+      const accountsResponse = await fetch(`https://graph.facebook.com/${META_API_VERSION}/me/accounts?access_token=${longLivedData.access_token}`);
       const accountsData = await accountsResponse.json() as FacebookBusinessAccountsResponse;
 
       if (accountsData.error) {
