@@ -289,17 +289,12 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       console.log('🔍 OAuth Callback - Processando fluxo de Embedded Signup...');
       
       try {
-        // Buscar ou criar WABA com o token
-        let wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.userId, stateData.restaurantId);
-        
-        // Atualizar estado do signup com todos os dados
+        // Salvar token OAuth primeiro (sempre funciona)
         await supabase
           .from('whatsapp_signup_states')
           .update({
-            waba_id: wabaId,
             access_token: access_token,
             token_expires_at: expiresAt.toISOString(),
-            status: 'oauth_completed',
             updated_at: new Date().toISOString()
           })
           .eq('state', state as string);
@@ -321,18 +316,63 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
           console.warn('🔍 OAuth Callback - Aviso ao salvar token meta_tokens:', tokenError);
         }
 
-        console.log('🔍 OAuth Callback - Embedded Signup processado com sucesso:', { wabaId, state: state as string });
-        
-        return res.json({
-          success: true,
-          message: 'WhatsApp Business OAuth processado com sucesso',
-          data: {
-            waba_id: wabaId,
-            state: state as string,
-            next_step: 'register_phone',
-            redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=oauth_completed&state=${encodeURIComponent(state as string)}`
+        // Tentar descobrir WABA
+        try {
+          const wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.userId, stateData.restaurantId);
+          
+          // WABA encontrada - atualizar estado
+          await supabase
+            .from('whatsapp_signup_states')
+            .update({
+              waba_id: wabaId,
+              status: 'oauth_completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('state', state as string);
+
+          console.log('🔍 OAuth Callback - ✅ WABA encontrada:', { wabaId, state: state as string });
+          
+          return res.json({
+            success: true,
+            message: 'WhatsApp Business OAuth processado com sucesso',
+            data: {
+              waba_id: wabaId,
+              state: state as string,
+              status: 'oauth_completed',
+              next_step: 'register_phone',
+              redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=oauth_completed&state=${encodeURIComponent(state as string)}`
+            }
+          });
+
+        } catch (wabaError: any) {
+          if (wabaError.message === 'WABA_NOT_FOUND') {
+            console.log('🔍 OAuth Callback - ❌ WABA não encontrada, aguardando criação pelo usuário');
+            
+            return res.json({
+              success: true,
+              message: 'OAuth processado. Criação de WhatsApp Business pendente.',
+              data: {
+                state: state as string,
+                status: 'awaiting_waba_creation',
+                next_step: 'create_waba',
+                redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=awaiting_waba&state=${encodeURIComponent(state as string)}`,
+                instructions: {
+                  title: 'Configure sua conta WhatsApp Business',
+                  description: 'Para continuar, você precisa criar uma conta WhatsApp Business.',
+                  steps: [
+                    'Acesse o Facebook Business Manager',
+                    'Vá para Configurações > Contas do WhatsApp Business',
+                    'Crie uma nova conta WhatsApp Business',
+                    'Volte aqui e atualize o status'
+                  ],
+                  business_manager_url: 'https://business.facebook.com/settings/whatsapp-business-accounts'
+                }
+              }
+            });
+          } else {
+            throw wabaError;
           }
-        });
+        }
 
       } catch (error: any) {
         console.error('🔍 OAuth Callback - Erro no Embedded Signup:', error);
@@ -1640,6 +1680,80 @@ router.post('/signup/verify-phone', authenticateToken, async (req: Authenticated
     return res.status(500).json({
       success: false,
       message: 'Erro interno ao verificar código',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/signup/refresh-waba:
+ *   post:
+ *     summary: Força nova verificação de WABA após criação pelo usuário
+ *     description: |
+ *       Quando o usuário recebe status 'awaiting_waba_creation', ele deve criar
+ *       uma WABA manualmente no Facebook Business Manager. Após criar,
+ *       deve chamar esta rota para verificar novamente.
+ *     tags: [WhatsApp, Embedded Signup]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - state
+ *             properties:
+ *               state:
+ *                 type: string
+ *                 description: State do processo de signup
+ *                 example: "encoded_state_string"
+ *     responses:
+ *       200:
+ *         description: WABA verificada com sucesso
+ *       400:
+ *         description: State inválido ou dados faltando
+ *       401:
+ *         description: Token de autenticação inválido
+ *       404:
+ *         description: Processo de signup não encontrado
+ *       500:
+ *         description: Erro interno do servidor
+ */
+router.post('/signup/refresh-waba', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+    const { state } = req.body;
+
+    if (!userId || !restaurantId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuário ou restaurante não encontrado'
+      });
+    }
+
+    if (!state) {
+      return res.status(400).json({
+        success: false,
+        message: 'State é obrigatório'
+      });
+    }
+
+    const result = await WhatsAppService.refreshWABAStatus(userId, restaurantId, state);
+    
+    return res.json({
+      success: true,
+      data: result
+    });
+
+  } catch (error: any) {
+    console.error('Erro ao atualizar status da WABA:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao atualizar status',
       error: error.message
     });
   }
