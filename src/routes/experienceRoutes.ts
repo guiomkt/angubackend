@@ -23,7 +23,7 @@ const router = Router();
  *           description: ID único da bonificação
  *         name:
  *           type: string
- *           description: Nome da bonificação (ex: Aniversário Premiado, Primeira Visita)
+ *           description: Nome da bonificação
  *         description:
  *           type: string
  *           description: Descrição detalhada da bonificação
@@ -61,7 +61,7 @@ const router = Router();
  *           description: ID único do evento
  *         name:
  *           type: string
- *           description: Nome do evento (ex: Festa Junina Premium, Noite do Samba)
+ *           description: Nome do evento
  *         description:
  *           type: string
  *           description: Descrição do evento
@@ -132,7 +132,7 @@ const router = Router();
  *           description: ID único do evento exclusivo
  *         name:
  *           type: string
- *           description: Nome do evento exclusivo (ex: Casamento Silva-Santos)
+ *           description: Nome do evento exclusivo
  *         description:
  *           type: string
  *           description: Descrição detalhada do evento
