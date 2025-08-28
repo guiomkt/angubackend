@@ -27,7 +27,7 @@ DROP CONSTRAINT IF EXISTS whatsapp_signup_states_status_check;
 
 ALTER TABLE public.whatsapp_signup_states 
 ADD CONSTRAINT whatsapp_signup_states_status_check 
-CHECK (status IN ('pending', 'oauth_completed', 'waba_created', 'phone_configured', 'completed', 'failed'));
+CHECK (status IN ('pending', 'oauth_completed', 'awaiting_waba_creation', 'waba_created', 'phone_configured', 'completed', 'failed'));
 
 -- Comentário na tabela
 COMMENT ON TABLE public.whatsapp_signup_states IS 'Controla o estado do processo de configuração do WhatsApp Business via Embedded Signup da Meta';
