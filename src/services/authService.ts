@@ -527,7 +527,7 @@ export class AuthService {
         scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
       });
 
-      const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
+      const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`;
 
       return {
         authUrl,
@@ -572,7 +572,7 @@ export class AuthService {
       scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
     });
 
-    const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?${params.toString()}`;
+    const authUrl = `https://www.facebook.com/v22.0/dialog/oauth?${params.toString()}`;
     
     return authUrl;
   }

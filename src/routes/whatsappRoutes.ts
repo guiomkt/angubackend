@@ -375,17 +375,65 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       
       return res.status(400).json({
         success: false,
-        message: `No WhatsApp Business Account found. Diagnóstico:
-- Páginas encontradas: ${pages?.length || 0}
-- Para conectar WhatsApp Business: 
-  1. Acesse https://business.facebook.com/
-  2. Vá em Configurações > Contas do WhatsApp Business
-  3. Conecte uma conta WhatsApp Business à sua página
-  4. Certifique-se de que você é admin da página e da WABA
-- Se já tem WABA conectado, verifique as permissões do app no Facebook Developer Console`,
-        debug: {
-          pages_found: pages?.length || 0,
-          token_permissions_needed: ['whatsapp_business_management', 'whatsapp_business_messaging', 'pages_read_engagement']
+        message: "WhatsApp Business não encontrado",
+        error_details: {
+          title: "Configuração WhatsApp Business Necessária",
+          description: "Para usar a integração do WhatsApp, você precisa conectar uma conta WhatsApp Business à sua página do Facebook.",
+          steps: [
+            {
+              step: 1,
+              title: "Acesse o Facebook Business Manager",
+              action: "Clique aqui para abrir",
+              url: "https://business.facebook.com/",
+              description: "Faça login na sua conta do Facebook"
+            },
+            {
+              step: 2,
+              title: "Configure WhatsApp Business",
+              action: "Ir para configurações",
+              url: "https://business.facebook.com/settings/whatsapp-business-accounts",
+              description: "Vá em Configurações > Contas do WhatsApp Business"
+            },
+            {
+              step: 3,
+              title: "Conecte à sua página",
+              action: "Conectar WhatsApp",
+              url: "https://business.facebook.com/settings/pages",
+              description: "Conecte uma conta WhatsApp Business à sua página"
+            },
+            {
+              step: 4,
+              title: "Verifique permissões",
+              action: "Verificar app",
+              url: "https://developers.facebook.com/apps/3246838805460539/settings/basic/",
+              description: "Certifique-se de que você é admin da página e da WABA"
+            }
+          ],
+          troubleshooting: {
+            title: "Solução de Problemas",
+            common_issues: [
+              "Página do Facebook não encontrada",
+              "WhatsApp Business não conectado",
+              "Permissões insuficientes no app",
+              "Token de acesso expirado"
+            ],
+            support_links: [
+              {
+                title: "Documentação Meta",
+                url: "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
+              },
+              {
+                title: "Central de Ajuda WhatsApp Business",
+                url: "https://business.whatsapp.com/support"
+              }
+            ]
+          },
+          technical_info: {
+            pages_found: pages?.length || 0,
+            token_permissions_needed: ['whatsapp_business_management', 'whatsapp_business_messaging', 'pages_read_engagement'],
+            api_version: 'v22.0',
+            required_scopes: ['whatsapp_business_management', 'whatsapp_business_messaging']
+          }
         }
       });
     }

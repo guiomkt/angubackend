@@ -414,7 +414,10 @@ const corsOptions = {
       'http://localhost:3000', 
       'http://localhost:4173',
       'https://cheffguio.com',
-      'https://angubackend-production.up.railway.app'
+      'https://angubackend-production.up.railway.app',
+      'https://angu.ai',
+      'https://www.angu.ai',
+      'https://api.angu.ai'
     ];
     
     // Log para debug
@@ -550,7 +553,7 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check (Railway): https://angubackend-production.up.railway.app/health`);
   console.log(`🔍 Health check (Detalhado): https://angubackend-production.up.railway.app/health/detailed`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✅ CORS configurado para: localhost:5173, localhost:3000, cheffguio.com, angubackend-production.up.railway.app`);
+  console.log(`✅ CORS configurado para: localhost:5173, localhost:3000, cheffguio.com, angubackend-production.up.railway.app, angu.ai, api.angu.ai`);
 });
 
 export default app; 
