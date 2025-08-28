@@ -23,7 +23,7 @@ const router = express.Router()
  *             authUrl:
  *               type: string
  *               description: URL de autorização da Meta para OAuth
- *               example: "https://www.facebook.com/v20.0/dialog/oauth?client_id=123&redirect_uri=https://api.cheffguio.com/api/auth/meta/callback&state=..."
+ *               example: "https://www.facebook.com/v22.0/dialog/oauth?client_id=123&redirect_uri=https://api.cheffguio.com/api/auth/meta/callback&state=..."
  *             state:
  *               type: string
  *               description: Estado criptografado para validação da requisição
@@ -116,7 +116,7 @@ const router = express.Router()
  *             example:
  *               success: true
  *               data:
- *                 authUrl: "https://www.facebook.com/v20.0/dialog/oauth?client_id=123&redirect_uri=https://api.cheffguio.com/api/auth/meta/callback&state=..."
+ *                 authUrl: "https://www.facebook.com/v22.0/dialog/oauth?client_id=123&redirect_uri=https://api.cheffguio.com/api/auth/meta/callback&state=..."
  *                 state: "eyJ1c2VySWQiOiIxMjMiLCJyZXN0YXVyYW50SWQiOiI0NTYiLCJyZWRpcmVjdFVybCI6Imh0dHBzOi8vY2hlZmZndWlvLmNvbS93aGF0c2FwcCIsInRpbWVzdGFtcCI6MTYzNDU2Nzg5MH0="
  *       401:
  *         description: Token de autenticação inválido ou expirado
