@@ -1414,7 +1414,8 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
  *       **Escopos solicitados:**
  *       - whatsapp_business_management
  *       - whatsapp_business_messaging
- *       - business_management (🔑 CRÍTICO para criação automática de WABA)
+ *       - pages_show_list
+ *       - pages_read_engagement
  *       
  *       **Fluxo:**
  *       1. Usuário chama esta rota
@@ -1519,7 +1520,7 @@ router.get('/oauth/callback-v2', WhatsAppController.handleOAuthCallback);
  *                   properties:
  *                     status:
  *                       type: string
- *                       enum: [pending, oauth_completed, waba_created, awaiting_number_verification, completed, failed]
+ *                       enum: [pending, oauth_completed, waba_detected, awaiting_number_verification, completed, failed]
  *                     waba_id:
  *                       type: string
  *                       description: ID da conta WhatsApp Business
