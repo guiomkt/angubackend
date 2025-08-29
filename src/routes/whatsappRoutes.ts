@@ -226,7 +226,12 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
   try {
     const { code, state } = req.query;
 
-    console.log('🔍 OAuth Callback - Parâmetros recebidos:', { code: !!code, state: !!state });
+    console.log('🔍 OAuth Callback - Parâmetros recebidos:', { 
+      hasCode: !!code, 
+      hasState: !!state,
+      codeLength: code ? (code as string).length : 0,
+      stateLength: state ? (state as string).length : 0
+    });
     console.log('🔍 OAuth Callback - Variáveis de ambiente:', {
       FACEBOOK_APP_ID: !!process.env.FACEBOOK_APP_ID,
       FACEBOOK_APP_SECRET: !!process.env.FACEBOOK_APP_SECRET,
@@ -234,6 +239,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     });
 
     if (!code) {
+      console.error('🔍 OAuth Callback - Código de autorização ausente');
       return res.status(400).json({
         success: false,
         message: 'Authorization code is required'
@@ -246,17 +252,33 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     if (state) {
       try {
-        stateData = JSON.parse(decodeURIComponent(state as string));
+        const decodedState = decodeURIComponent(state as string);
+        console.log('🔍 OAuth Callback - State raw:', state);
+        console.log('🔍 OAuth Callback - State decoded:', decodedState);
+        
+        stateData = JSON.parse(decodedState);
         isEmbeddedSignup = stateData.flow === 'embedded_signup';
-        console.log('🔍 OAuth Callback - Tipo de processo detectado:', { 
+        
+        console.log('🔍 OAuth Callback - State parsed:', { 
           flow: stateData.flow, 
           isEmbeddedSignup,
           userId: stateData.user_id,
-          restaurantId: stateData.restaurant_id
+          restaurantId: stateData.restaurant_id,
+          nonce: stateData.nonce
         });
+        
+        // Validar campos obrigatórios
+        if (isEmbeddedSignup && (!stateData.user_id || !stateData.restaurant_id)) {
+          console.error('🔍 OAuth Callback - State inválido: campos obrigatórios faltando');
+          isEmbeddedSignup = false;
+          stateData = null;
+        }
+        
       } catch (error) {
-        console.log('🔍 OAuth Callback - State não é JSON válido, continuando com fluxo padrão');
+        console.log('🔍 OAuth Callback - Erro ao parsear state como JSON:', error);
         console.log('🔍 OAuth Callback - State recebido:', state);
+        isEmbeddedSignup = false;
+        stateData = null;
       }
     }
 
@@ -268,23 +290,79 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const redirectUri = `${baseUrl}/api/whatsapp/oauth/callback`;
     
     console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
+    console.log('🔍 OAuth Callback - URL para troca de token:', META_URLS.OAUTH_ACCESS_TOKEN);
     
-    const tokenResponse = await axios.post(META_URLS.OAUTH_ACCESS_TOKEN, {
-      client_id: process.env.FACEBOOK_APP_ID,
-      client_secret: process.env.FACEBOOK_APP_SECRET,
-      code: code,
-      redirect_uri: redirectUri
-    });
+    let tokenResponse: any;
+    try {
+      tokenResponse = await axios.post(META_URLS.OAUTH_ACCESS_TOKEN, {
+        client_id: process.env.FACEBOOK_APP_ID,
+        client_secret: process.env.FACEBOOK_APP_SECRET,
+        code: code,
+        redirect_uri: redirectUri
+      });
 
-    console.log('🔍 OAuth Callback - Token response recebido:', { 
-      success: !!tokenResponse.data, 
-      hasAccessToken: !!(tokenResponse.data as any).access_token 
-    });
+      console.log('🔍 OAuth Callback - Token response recebido:', { 
+        success: !!tokenResponse.data, 
+        hasAccessToken: !!(tokenResponse.data as any).access_token,
+        responseKeys: Object.keys(tokenResponse.data || {}),
+        rawResponse: tokenResponse.data
+      });
+    } catch (tokenError: any) {
+      console.error('🔍 OAuth Callback - Erro na troca de token:', {
+        status: tokenError.response?.status,
+        statusText: tokenError.response?.statusText,
+        data: tokenError.response?.data,
+        message: tokenError.message
+      });
+      throw tokenError;
+    }
 
     const { access_token, token_type, expires_in } = tokenResponse.data as MetaTokenResponse;
 
-    // Calcular data de expiração
-    const expiresAt = new Date(Date.now() + (expires_in * 1000));
+    console.log('🔍 OAuth Callback - Dados extraídos do token:', {
+      hasAccessToken: !!access_token,
+      tokenType: token_type,
+      expiresInRaw: expires_in,
+      expiresInType: typeof expires_in
+    });
+
+    // Calcular data de expiração com validação
+    let expirationTime: number;
+    try {
+      expirationTime = expires_in && typeof expires_in === 'number' && expires_in > 0 
+        ? Date.now() + (expires_in * 1000) 
+        : Date.now() + (24 * 60 * 60 * 1000); // 24 horas como padrão
+      
+      console.log('🔍 OAuth Callback - Tempo de expiração calculado:', {
+        expirationTime,
+        dateNow: Date.now(),
+        expiresInSeconds: expires_in
+      });
+      
+    } catch (timeError) {
+      console.error('🔍 OAuth Callback - Erro ao calcular tempo de expiração:', timeError);
+      expirationTime = Date.now() + (24 * 60 * 60 * 1000); // Fallback seguro
+    }
+    
+    let expiresAt: Date;
+    try {
+      expiresAt = new Date(expirationTime);
+      console.log('🔍 OAuth Callback - Data de expiração criada:', {
+        expiresAt: expiresAt.toISOString(),
+        isValidDate: !isNaN(expiresAt.getTime())
+      });
+    } catch (dateError) {
+      console.error('🔍 OAuth Callback - Erro ao criar data de expiração:', dateError);
+      expiresAt = new Date(Date.now() + (24 * 60 * 60 * 1000)); // Fallback mais seguro
+    }
+
+    console.log('🔍 OAuth Callback - Token info final:', { 
+      hasAccessToken: !!access_token, 
+      tokenType: token_type, 
+      expiresIn: expires_in,
+      expiresAt: expiresAt.toISOString(),
+      isEmbeddedSignup
+    });
 
     // Se for Embedded Signup, processar fluxo específico
     if (isEmbeddedSignup && stateData?.user_id && stateData?.restaurant_id) {
@@ -292,59 +370,79 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
       
       try {
         // Salvar token OAuth primeiro (sempre funciona)
-        await supabase
-          .from('whatsapp_signup_states')
-          .update({
-            access_token: access_token,
-            token_expires_at: expiresAt.toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('state', state as string);
+        console.log('🔍 OAuth Callback - Salvando token no signup_states...');
+        try {
+          await supabase
+            .from('whatsapp_signup_states')
+            .update({
+              access_token: access_token,
+              token_expires_at: expiresAt.toISOString()
+            })
+            .eq('state', state as string);
+          
+          console.log('🔍 OAuth Callback - ✅ Token salvo no signup_states');
+        } catch (saveTokenError) {
+          console.error('🔍 OAuth Callback - ❌ Erro ao salvar token no signup_states:', saveTokenError);
+          throw saveTokenError;
+        }
 
         // Salvar token OAuth do usuário para referência
-        const { error: tokenError } = await supabase
-          .from('meta_tokens')
-          .upsert({
-            user_id: stateData.user_id,
-            oauth_access_token: access_token,
-            oauth_token_expires_at: expiresAt.toISOString(),
-            oauth_token_type: 'long_lived',
-            restaurant_id: stateData.restaurant_id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'user_id' });
+        console.log('🔍 OAuth Callback - Salvando token no meta_tokens...');
+        try {
+          const { error: tokenError } = await supabase
+            .from('meta_tokens')
+            .upsert({
+              user_id: stateData.user_id,
+              oauth_access_token: access_token,
+              oauth_token_expires_at: expiresAt.toISOString(),
+              oauth_token_type: 'long_lived',
+              restaurant_id: stateData.restaurant_id,
+              created_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
 
-        if (tokenError) {
-          console.warn('🔍 OAuth Callback - Aviso ao salvar token meta_tokens:', tokenError);
+          if (tokenError) {
+            console.warn('🔍 OAuth Callback - Aviso ao salvar token meta_tokens:', tokenError);
+          } else {
+            console.log('🔍 OAuth Callback - ✅ Token salvo no meta_tokens');
+          }
+        } catch (metaTokenError) {
+          console.error('🔍 OAuth Callback - ❌ Erro ao salvar token no meta_tokens:', metaTokenError);
+          // Não interromper o fluxo por este erro
         }
 
         // Tentar descobrir WABA
+        console.log('🔍 OAuth Callback - Iniciando descoberta/criação de WABA...');
         try {
           const wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.user_id, stateData.restaurant_id);
           
           // WABA encontrada ou criada - atualizar estado
-          await supabase
-            .from('whatsapp_signup_states')
-            .update({
-              waba_id: wabaId,
-              status: 'oauth_completed',
-              updated_at: new Date().toISOString()
-            })
-            .eq('state', state as string);
+          console.log('🔍 OAuth Callback - Atualizando estado com WABA...');
+          try {
+            await supabase
+              .from('whatsapp_signup_states')
+              .update({
+                waba_id: wabaId,
+                status: 'oauth_completed'
+              })
+              .eq('state', state as string);
 
-          console.log('🔍 OAuth Callback - ✅ WABA encontrada/criada:', { wabaId, state: state as string });
-          
-          return res.json({
-            success: true,
-            message: 'WhatsApp Business OAuth processado com sucesso',
-            data: {
-              waba_id: wabaId,
-              state: state as string,
-              status: 'oauth_completed',
-              next_step: 'register_phone',
-              redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=oauth_completed&state=${encodeURIComponent(state as string)}`
-            }
-          });
+            console.log('🔍 OAuth Callback - ✅ WABA encontrada/criada:', { wabaId, state: state as string });
+            
+            return res.json({
+              success: true,
+              message: 'WhatsApp Business OAuth processado com sucesso',
+              data: {
+                waba_id: wabaId,
+                state: state as string,
+                status: 'oauth_completed',
+                next_step: 'register_phone',
+                redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=oauth_completed&state=${encodeURIComponent(state as string)}`
+              }
+            });
+          } catch (updateWabaError) {
+            console.error('🔍 OAuth Callback - ❌ Erro ao atualizar estado com WABA:', updateWabaError);
+            throw updateWabaError;
+          }
 
         } catch (wabaError: any) {
           if (wabaError.message === 'WABA_NOT_FOUND') {
@@ -372,21 +470,27 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
               }
             });
           } else {
+            console.error('🔍 OAuth Callback - ❌ Erro na descoberta/criação de WABA:', wabaError);
             throw wabaError;
           }
         }
 
       } catch (error: any) {
-        console.error('🔍 OAuth Callback - Erro no Embedded Signup:', error);
+        console.error('🔍 OAuth Callback - ❌ Erro no Embedded Signup:', error);
         
         // Marcar estado como failed
-        await supabase
-          .from('whatsapp_signup_states')
-          .update({
-            status: 'failed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('state', state as string);
+        try {
+          await supabase
+            .from('whatsapp_signup_states')
+            .update({
+              status: 'failed'
+            })
+            .eq('state', state as string);
+          
+          console.log('🔍 OAuth Callback - Estado marcado como failed');
+        } catch (failError) {
+          console.error('🔍 OAuth Callback - ❌ Erro ao marcar como failed:', failError);
+        }
         
         return res.status(500).json({
           success: false,
@@ -1614,6 +1718,13 @@ router.post('/signup/register-phone', authenticateToken, async (req: Authenticat
     const restaurantId = req.user?.restaurant_id;
     const { phone_number, pin } = req.body;
 
+    console.log('🔍 POST /signup/register-phone - Dados recebidos:', { 
+      userId, 
+      restaurantId, 
+      phone_number, 
+      hasPin: !!pin 
+    });
+
     if (!userId || !restaurantId) {
       return res.status(400).json({
         success: false,
@@ -1636,7 +1747,7 @@ router.post('/signup/register-phone', authenticateToken, async (req: Authenticat
     });
 
   } catch (error: any) {
-    console.error('Erro ao registrar número de telefone:', error);
+    console.error('🔍 ❌ Erro na rota /signup/register-phone:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Erro interno ao registrar número',
@@ -1647,7 +1758,7 @@ router.post('/signup/register-phone', authenticateToken, async (req: Authenticat
 
 /**
  * @swagger
- * /api/whatsapp/signup/verify-phone:
+ * /api/whatsapp/signup/verify-code:
  *   post:
  *     summary: Confirma o código de verificação do número de telefone
  *     description: |
@@ -1684,11 +1795,18 @@ router.post('/signup/register-phone', authenticateToken, async (req: Authenticat
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/signup/verify-phone', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/signup/verify-code', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const restaurantId = req.user?.restaurant_id;
     const { phone_number_id, verification_code } = req.body;
+
+    console.log('🔍 POST /signup/verify-code - Dados recebidos:', { 
+      userId, 
+      restaurantId, 
+      phone_number_id, 
+      code: '***' 
+    });
 
     if (!userId || !restaurantId) {
       return res.status(400).json({
@@ -1712,7 +1830,7 @@ router.post('/signup/verify-phone', authenticateToken, async (req: Authenticated
     });
 
   } catch (error: any) {
-    console.error('Erro ao verificar código do telefone:', error);
+    console.error('🔍 ❌ Erro na rota /signup/verify-code:', error.message);
     return res.status(500).json({
       success: false,
       message: 'Erro interno ao verificar código',
