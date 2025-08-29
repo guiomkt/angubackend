@@ -33,9 +33,11 @@ export const META_URLS = {
 // Configurações para BSP (Business Solution Provider)
 export const BSP_CONFIG = {
   // Business ID do nosso BSP
-  BSP_BUSINESS_ID: process.env.BSP_BUSINESS_ID || '',
+  BSP_BUSINESS_ID: process.env.WHATSAPP_APP_ID || '',
   // System User Access Token para operações de BSP
-  SYSTEM_USER_ACCESS_TOKEN: process.env.BSP_SYSTEM_USER_ACCESS_TOKEN || '',
+  SYSTEM_USER_ACCESS_TOKEN: process.env.WHATSAPP_SYSTEM_USER_TOKEN || '',
+  // Token permanente para operações avançadas
+  SYSTEM_USER_ACCESS_TOKEN: process.env.WHATSAPP_TOKEN_PERMANENT || '',
 } as const;
 
 export default META_CONFIG; 

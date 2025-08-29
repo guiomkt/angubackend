@@ -147,9 +147,10 @@ interface PagesResponse {
 interface PageWABAResponse {
   id: string;
   name: string;
-  connected_whatsapp_business_account?: {
+  whatsapp_business_account?: {
     id: string;
     name: string;
+    status: string;
   };
 }
 
@@ -162,6 +163,21 @@ interface BusinessListResponse {
     name: string;
     status: string;
   }[];
+}
+
+/**
+ * Resposta da API da Meta para business com WABAs.
+ */
+interface BusinessWABAResponse {
+  id: string;
+  name: string;
+  whatsapp_business_accounts?: {
+    data: Array<{
+      id: string;
+      name: string;
+      status: string;
+    }>;
+  };
 }
 
 /**
@@ -214,8 +230,8 @@ interface OAuthTokenResponse {
  * 
  * 3. DESCOBERTA/CRIAÇÃO DE WABA (FLUXO HÍBRIDO):
  *    - ESTRATÉGIA 1: Tentar descobrir WABA existente com User Access Token
- *      a) GET /me/whatsapp_business_accounts
- *      b) GET /me/accounts + connected_whatsapp_business_account
+ *      a) GET /me/businesses + whatsapp_business_accounts
+ *      b) GET /me/accounts + whatsapp_business_account
  *    - ESTRATÉGIA 2: Se não encontrou, criar automaticamente via BSP
  *      a) POST /{business_id}/client_whatsapp_applications (System User Token)
  *      b) Aguarda propagação e verifica criação
@@ -822,23 +838,38 @@ class WhatsAppService {
       const usedPin = pin || this.PHONE_REGISTRATION_PIN;
       console.log('🔍 Usando PIN:', usedPin);
 
-      // Registrar número via API da Meta
-      console.log('🔍 Chamando API da Meta para registrar número...');
-      const registerResponse = await axios.post<{ id: string; display_phone_number: string; status: string }>(
-        `${this.META_GRAPH_URL}/${signupState.waba_id}/phone_numbers`,
-        {
-          messaging_product: 'whatsapp',
-          display_phone_number: phoneNumber,
-          pin: usedPin
-        },
-        {
-          headers: { 'Authorization': `Bearer ${signupState.access_token}` }
+      // Registrar número via Edge Function
+      console.log('🔍 Chamando Edge Function para registrar número...');
+      const edgeFunctionUrl = `${process.env.SUPABASE_URL}/functions/v1/register-waba`;
+      
+      const registerResponse = await axios.post<{
+        success: boolean;
+        data?: {
+          phone_status?: { id: string };
+        };
+        error?: string;
+      }>(edgeFunctionUrl, {
+        restaurantId,
+        credential: {
+          phone_number_id: signupState.phone_number_id,
+          waba_id: signupState.waba_id,
+          access_token: signupState.access_token,
+          phone_number: phoneNumber
         }
-      );
+      }, {
+        headers: {
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
-      console.log('🔍 Resposta da API Meta (registro):', JSON.stringify(registerResponse.data, null, 2));
+      console.log('🔍 Resposta da Edge Function (registro):', JSON.stringify(registerResponse.data, null, 2));
 
-      const phoneNumberId = registerResponse.data.id;
+      if (!registerResponse.data.success) {
+        throw new Error(registerResponse.data.error || 'Falha no registro via Edge Function');
+      }
+
+      const phoneNumberId = registerResponse.data.data?.phone_status?.id || signupState.phone_number_id;
 
       // Atualizar estado do signup
       await this._updateSignupState(userId, restaurantId, {
@@ -1154,64 +1185,81 @@ class WhatsAppService {
         console.log('🔍 ESTRATÉGIA 1: Buscando WABA existente com User Access Token...');
         
         try {
-          // Buscar WABAs diretamente do usuário
-          const userWabaResponse = await axios.get<WABAListResponse>(
-            `${this.META_GRAPH_URL}/me/whatsapp_business_accounts`,
+          // Buscar WABAs via business accounts do usuário
+          const businessResponse = await axios.get<BusinessListResponse>(
+            `${this.META_GRAPH_URL}/me/businesses?fields=id,name`,
             {
               headers: { 'Authorization': `Bearer ${userAccessToken}` }
             }
           );
 
-          const userWabas = userWabaResponse.data?.data || [];
-          console.log(`🔍 WABAs encontradas com User Token: ${userWabas.length}`, userWabas.map(w => ({ id: w.id, name: w.name, status: w.status })));
+          const businesses = businessResponse.data?.data || [];
+          console.log(`🔍 Businesses encontrados: ${businesses.length}`, businesses.map(b => ({ id: b.id, name: b.name })));
 
-          if (userWabas.length > 0) {
-            const wabaId = userWabas[0].id;
-            console.log('🔍 ✅ WABA existente encontrada com User Token:', wabaId);
-            return wabaId;
-          }
-        } catch (error: any) {
-          console.log('🔍 ❌ Erro ao buscar WABAs com User Token:', error.response?.data || error.message);
-        }
-
-        // Tentar buscar via páginas (fallback)
-        try {
-          const pagesResponse = await axios.get<PagesResponse>(
-            `${this.META_GRAPH_URL}/me/accounts`,
-            {
-              headers: { 'Authorization': `Bearer ${userAccessToken}` }
-            }
-          );
-
-          const pages = pagesResponse.data?.data || [];
-          console.log(`🔍 Páginas encontradas: ${pages.length}`, pages.map(p => ({ id: p.id, name: p.name })));
-
-          // Para cada página, verificar se tem WABA conectado
-          for (const page of pages) {
+          // Para cada business, verificar se tem WABA
+          for (const business of businesses) {
             try {
-              console.log(`🔍 Verificando página: ${page.name} (${page.id})`);
+              console.log(`🔍 Verificando business: ${business.name} (${business.id})`);
               
-              const pageWabaResponse = await axios.get<PageWABAResponse>(
-                `${this.META_GRAPH_URL}/${page.id}?fields=connected_whatsapp_business_account`,
+              const businessWabaResponse = await axios.get<BusinessWABAResponse>(
+                `${this.META_GRAPH_URL}/${business.id}?fields=whatsapp_business_accounts{id,name,status}`,
                 {
                   headers: { 'Authorization': `Bearer ${userAccessToken}` }
                 }
               );
 
-              if (pageWabaResponse.data?.connected_whatsapp_business_account) {
-                const wabaId = pageWabaResponse.data.connected_whatsapp_business_account.id;
-                console.log('🔍 ✅ WABA encontrada via página:', wabaId);
+              if (businessWabaResponse.data?.whatsapp_business_accounts?.data && businessWabaResponse.data.whatsapp_business_accounts.data.length > 0) {
+                const wabaId = businessWabaResponse.data.whatsapp_business_accounts.data[0].id;
+                console.log('🔍 ✅ WABA encontrada via business:', wabaId);
                 return wabaId;
               }
             } catch (error: any) {
-              // Página sem WABA conectado - continuar para próxima
-              console.log(`🔍 Página ${page.name} sem WABA conectado:`, error.response?.data?.error?.message || 'sem WABA');
+              console.log(`🔍 Business ${business.name} sem WABA:`, error.response?.data?.error?.message || 'sem WABA');
               continue;
             }
           }
         } catch (error: any) {
-          console.log('🔍 ❌ Erro ao buscar via páginas:', error.response?.data || error.message);
+          console.log('🔍 ❌ Erro ao buscar businesses:', error.response?.data || error.message);
         }
+
+                  // Tentar buscar via páginas (fallback)
+          try {
+            const pagesResponse = await axios.get<PagesResponse>(
+              `${this.META_GRAPH_URL}/me/accounts`,
+              {
+                headers: { 'Authorization': `Bearer ${userAccessToken}` }
+              }
+            );
+
+            const pages = pagesResponse.data?.data || [];
+            console.log(`🔍 Páginas encontradas: ${pages.length}`, pages.map(p => ({ id: p.id, name: p.name })));
+
+            // Para cada página, verificar se tem WABA conectado
+            for (const page of pages) {
+              try {
+                console.log(`🔍 Verificando página: ${page.name} (${page.id})`);
+                
+                const pageWabaResponse = await axios.get<PageWABAResponse>(
+                  `${this.META_GRAPH_URL}/${page.id}?fields=whatsapp_business_account{id,name,status}`,
+                  {
+                    headers: { 'Authorization': `Bearer ${userAccessToken}` }
+                  }
+                );
+
+                if (pageWabaResponse.data?.whatsapp_business_account) {
+                  const wabaId = pageWabaResponse.data.whatsapp_business_account.id;
+                  console.log('🔍 ✅ WABA encontrada via página:', wabaId);
+                  return wabaId;
+                }
+              } catch (error: any) {
+                // Página sem WABA conectado - continuar para próxima
+                console.log(`🔍 Página ${page.name} sem WABA conectado:`, error.response?.data?.error?.message || 'sem WABA');
+                continue;
+              }
+            }
+          } catch (error: any) {
+            console.log('🔍 ❌ Erro ao buscar via páginas:', error.response?.data || error.message);
+          }
       }
 
       // ESTRATÉGIA 2: Se não encontrou WABA existente, tentar criar via BSP
