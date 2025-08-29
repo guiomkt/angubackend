@@ -393,9 +393,9 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
             .from('meta_tokens')
             .upsert({
               user_id: stateData.user_id,
-              oauth_access_token: access_token,
-              oauth_token_expires_at: expiresAt.toISOString(),
-              oauth_token_type: 'long_lived',
+              access_token: access_token,
+              expires_at: expiresAt.toISOString(),
+              token_type: 'user',
               restaurant_id: stateData.restaurant_id,
               created_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
@@ -446,31 +446,32 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
         } catch (wabaError: any) {
           if (wabaError.message === 'WABA_NOT_FOUND') {
-            console.log('🔍 OAuth Callback - ❌ WABA não encontrada e criação automática falhou, aguardando criação pelo usuário');
+            console.log('🔍 OAuth Callback - ❌ WABA não encontrada - usuário precisa completar Embedded Signup');
             
             return res.json({
               success: true,
-              message: 'OAuth processado. Criação de WhatsApp Business pendente.',
+              message: 'OAuth processado. WhatsApp Business não encontrado.',
               data: {
                 state: state as string,
                 status: 'awaiting_waba_creation',
-                next_step: 'create_waba',
+                next_step: 'complete_embedded_signup',
                 redirect_url: `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=awaiting_waba&state=${encodeURIComponent(state as string)}`,
                 instructions: {
-                  title: 'Configure sua conta WhatsApp Business',
-                  description: 'Para continuar, você precisa criar uma conta WhatsApp Business.',
+                  title: 'Complete a configuração do WhatsApp Business',
+                  description: 'Você autorizou com sucesso, mas ainda precisa criar ou conectar uma conta WhatsApp Business.',
                   steps: [
-                    'Acesse o Facebook Business Manager',
-                    'Vá para Configurações > Contas do WhatsApp Business',
-                    'Crie uma nova conta WhatsApp Business',
-                    'Volte aqui e atualize o status'
+                    '1. Acesse o Facebook Business Manager',
+                    '2. Vá para Configurações > Contas do WhatsApp Business', 
+                    '3. Crie uma nova conta WhatsApp Business OU conecte uma existente à sua página',
+                    '4. Após criar/conectar, volte aqui e clique em "Atualizar Status"'
                   ],
-                  business_manager_url: 'https://business.facebook.com/settings/whatsapp-business-accounts'
+                  business_manager_url: 'https://business.facebook.com/settings/whatsapp-business-accounts',
+                  note: 'A autorização OAuth foi bem-sucedida. Agora você precisa apenas vincular uma conta WhatsApp Business à sua página do Facebook.'
                 }
               }
             });
           } else {
-            console.error('🔍 OAuth Callback - ❌ Erro na descoberta/criação de WABA:', wabaError);
+            console.error('🔍 OAuth Callback - ❌ Erro na descoberta de WABA:', wabaError);
             throw wabaError;
           }
         }
