@@ -33,6 +33,7 @@ import whatsappRoutes from './routes/whatsappRoutes';
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
 
+// Carregar variáveis de ambiente
 dotenv.config();
 
 const app = express();
