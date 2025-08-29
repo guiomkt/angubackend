@@ -258,10 +258,10 @@ export class WhatsAppController {
       // Usar o novo método do serviço
       const result = await WhatsAppService.handleOAuthCallback(code as string, state as string);
 
-      if (result.success) {
-        const redirectUrl = result.waba_id 
-          ? `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=oauth_completed&state=${encodeURIComponent(state as string)}`
-          : `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=awaiting_waba&state=${encodeURIComponent(state as string)}`;
+              if (result.success) {
+          const redirectUrl = result.waba_id 
+            ? `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=waba_detected&state=${encodeURIComponent(state as string)}`
+            : `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=awaiting_waba&state=${encodeURIComponent(state as string)}`;
 
         return res.json({
           success: true,
