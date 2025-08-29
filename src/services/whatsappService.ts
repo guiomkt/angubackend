@@ -179,7 +179,7 @@ interface OAuthTokenResponse {
  * FLUXO DE EMBEDDED SIGNUP IMPLEMENTADO (BSP - Business Solution Provider):
  * 
  * 1. INÍCIO DO PROCESSO (/signup/start):
- *    - Gera URL de autorização OAuth com escopos necessários
+ *    - Gera URL de autorização OAuth com escopos necessários (incluindo business_management)
  *    - Salva estado inicial no banco com state único
  *    - Redireciona usuário para Facebook
  * 
@@ -192,8 +192,8 @@ interface OAuthTokenResponse {
  *      c) CRIAÇÃO AUTOMÁTICA via POST /{business_id}/client_whatsapp_applications (BSP)
  * 
  * 3. CRIAÇÃO AUTOMÁTICA DE WABA (BSP):
- *    - Busca Business ID via /me/businesses
- *    - Cria WABA automaticamente via client_whatsapp_applications
+ *    - Busca Business ID via GET /me/businesses?fields=id,name
+ *    - Cria WABA automaticamente via POST /{business_id}/client_whatsapp_applications
  *    - Aguarda propagação (3 segundos)
  *    - Verifica criação via /me/whatsapp_business_accounts
  * 
@@ -205,6 +205,13 @@ interface OAuthTokenResponse {
  *    - Confirma código via POST /{phone_number_id}/verify
  *    - Cria integração final na tabela whatsapp_business_integrations
  *    - Marca processo como 'completed'
+ * 
+ * 🔑 ESCOPOS OAUTH NECESSÁRIOS PARA BSP:
+ * - whatsapp_business_management: Gerenciar WABA
+ * - whatsapp_business_messaging: Enviar mensagens
+ * - business_management: CRIAÇÃO AUTOMÁTICA de WABA (CRÍTICO)
+ * - pages_show_list: Listar páginas
+ * - pages_read_engagement: Ler dados das páginas
  * 
  * PRINCIPAIS MELHORIAS DESTA IMPLEMENTAÇÃO:
  * - Automatiza criação de WABA via API da Meta (BSP)
@@ -1174,9 +1181,10 @@ class WhatsAppService {
       console.log('🔍 ESTRATÉGIA 3: Criando WABA automaticamente (BSP)...');
       
       try {
-        // Buscar Business ID do usuário
+        // 🔑 PASSO CRÍTICO: Buscar Business ID do usuário com campos específicos
+        console.log('🔍 Buscando Business ID via /me/businesses?fields=id,name...');
         const businessResponse = await axios.get<BusinessListResponse>(
-          `${this.META_GRAPH_URL}/me/businesses`,
+          `${this.META_GRAPH_URL}/me/businesses?fields=id,name`,
           {
             headers: { 'Authorization': `Bearer ${accessToken}` }
           }
@@ -1190,15 +1198,16 @@ class WhatsAppService {
         }
 
         const businessId = businesses[0].id;
-        console.log('🔍 Usando Business ID:', businessId);
+        const businessName = businesses[0].name;
+        console.log('🔍 ✅ Business ID encontrado:', { id: businessId, name: businessName });
 
         // Salvar business_id no signup state
         await this._updateSignupState(userId, restaurantId, {
           business_id: businessId
         });
 
-        // Criar WABA automaticamente via client_whatsapp_applications
-        console.log('🔍 Criando WABA via client_whatsapp_applications...');
+        // 🔑 CRIAR WABA automaticamente via client_whatsapp_applications
+        console.log('🔍 Criando WABA via POST /{business_id}/client_whatsapp_applications...');
         const createWabaResponse = await axios.post<CreateClientWABAResponse>(
           `${this.META_GRAPH_URL}/${businessId}/client_whatsapp_applications`,
           {
@@ -1213,7 +1222,11 @@ class WhatsAppService {
         );
 
         const newWabaId = createWabaResponse.data.id;
-        console.log('🔍 ✅ WABA criada automaticamente:', newWabaId);
+        console.log('🔍 ✅ WABA criada automaticamente via API:', { 
+          wabaId: newWabaId, 
+          businessId: businessId,
+          businessName: businessName 
+        });
 
         // Aguardar propagação da criação (3 segundos)
         console.log('🔍 Aguardando propagação da WABA criada...');

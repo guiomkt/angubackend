@@ -1414,6 +1414,7 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
  *       **Escopos solicitados:**
  *       - whatsapp_business_management
  *       - whatsapp_business_messaging
+ *       - business_management (🔑 CRÍTICO para criação automática de WABA)
  *       
  *       **Fluxo:**
  *       1. Usuário chama esta rota
