@@ -1330,6 +1330,10 @@ class WhatsAppService {
       console.log('🔍 Iniciando criação automática de WABA via BSP...');
       
       // Verificar se temos as configurações de BSP necessárias
+      console.log('🔍 Verificando configurações BSP...');
+      console.log('🔍 BSP_BUSINESS_ID:', BSP_CONFIG.BSP_BUSINESS_ID ? '✅ Configurado' : '❌ NÃO CONFIGURADO');
+      console.log('🔍 SYSTEM_USER_ACCESS_TOKEN:', BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN ? '✅ Configurado' : '❌ NÃO CONFIGURADO');
+      
       if (!BSP_CONFIG.BSP_BUSINESS_ID || !BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN) {
         console.error('🔍 ❌ Configurações de BSP não encontradas:', {
           hasBspBusinessId: !!BSP_CONFIG.BSP_BUSINESS_ID,
@@ -1337,9 +1341,28 @@ class WhatsAppService {
         });
         throw new Error('BSP_CONFIG_MISSING');
       }
+      
+      console.log('🔍 ✅ Configurações BSP válidas');
 
+      // Testar token BSP primeiro
+      console.log('🔍 Testando token BSP...');
+      try {
+        const testResponse = await axios.get<{ name: string; id: string }>(
+          `${this.META_GRAPH_URL}/me`,
+          {
+            headers: { 'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}` }
+          }
+        );
+        console.log('🔍 ✅ Token BSP válido, usuário:', testResponse.data.name);
+      } catch (testError: any) {
+        console.error('🔍 ❌ Token BSP inválido:', testError.response?.data || testError.message);
+        throw new Error(`Token BSP inválido: ${testError.response?.data?.error?.message || testError.message}`);
+      }
+      
       // Buscar Business ID do usuário primeiro
       console.log('🔍 Buscando Business ID do usuário...');
+      console.log('🔍 Usando System User Token para BSP:', BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN.substring(0, 10) + '...');
+      
       const businessResponse = await axios.get<BusinessListResponse>(
         `${this.META_GRAPH_URL}/me/businesses?fields=id,name`,
         {
@@ -1365,6 +1388,9 @@ class WhatsAppService {
 
       // Criar WABA automaticamente via client_whatsapp_applications
       console.log('🔍 Criando WABA via POST /{business_id}/client_whatsapp_applications...');
+      console.log('🔍 Business ID:', businessId);
+      console.log('🔍 Nome da integração:', `Integration for ${process.env.APP_NAME || 'Angu.ai'}`);
+      
       const createWabaResponse = await axios.post<CreateClientWABAResponse>(
         `${this.META_GRAPH_URL}/${businessId}/client_whatsapp_applications`,
         {
@@ -1391,6 +1417,7 @@ class WhatsAppService {
 
       // Verificar se WABA foi criada com sucesso
       try {
+        console.log('🔍 Verificando WABA criada:', newWabaId);
         const verifyResponse = await axios.get<WABAInfoResponse>(
           `${this.META_GRAPH_URL}/${newWabaId}`,
           {
@@ -1405,6 +1432,7 @@ class WhatsAppService {
       } catch (verifyError: any) {
         console.log('🔍 ❌ Erro ao verificar WABA criada:', verifyError.response?.data || verifyError.message);
         // WABA foi criada mas ainda não está propagada, retornar ID mesmo assim
+        console.log('🔍 ⚠️ WABA criada mas não verificada, retornando ID:', newWabaId);
         return newWabaId;
       }
 
