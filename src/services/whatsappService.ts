@@ -1,5 +1,6 @@
 import { supabase } from '../config/database';
 import axios from 'axios';
+import { META_CONFIG, META_URLS } from '../config/meta';
 
 // --- Interfaces de Dados ---
 
@@ -203,9 +204,9 @@ interface CreateClientWABAResponse {
  * - Fallback robusto com múltiplas estratégias
  */
 class WhatsAppService {
-  public static readonly META_API_VERSION = 'v22.0';
-  private static readonly META_GRAPH_URL = `https://graph.facebook.com/${this.META_API_VERSION}`;
-  private static readonly PHONE_REGISTRATION_PIN = "152563"; // Mantenha o PIN consistente com o da sua configuração Meta
+  public static readonly META_API_VERSION = META_CONFIG.API_VERSION;
+  private static readonly META_GRAPH_URL = META_URLS.GRAPH_API;
+  private static readonly PHONE_REGISTRATION_PIN = META_CONFIG.PHONE_REGISTRATION_PIN;
 
   // --- MÉTODOS PÚBLICOS DE ORQUESTRAÇÃO ---
 
@@ -471,17 +472,14 @@ class WhatsAppService {
         throw new Error('FACEBOOK_APP_ID não configurado');
       }
 
-      // Gerar state único e seguro
-      const randomString = Math.random().toString(36).substring(2, 15) + 
-                          Math.random().toString(36).substring(2, 15) + 
-                          Date.now().toString(36);
-
+      // Gerar state único e estruturado para rastreabilidade
       const stateData = {
-        userId,
-        restaurantId,
+        flow: 'embedded_signup',
+        user_id: userId,
+        restaurant_id: restaurantId,
         timestamp: Date.now(),
-        type: 'embedded_signup',
-        random: randomString
+        nonce: Math.random().toString(36).substring(2, 15) + 
+               Math.random().toString(36).substring(2, 15)
       };
 
       const encodedState = encodeURIComponent(JSON.stringify(stateData));
@@ -491,16 +489,21 @@ class WhatsAppService {
         client_id: clientId,
         redirect_uri: `${process.env.API_BASE_URL || 'https://api.angu.ai'}/api/whatsapp/oauth/callback`,
         state: encodedState,
-        scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_show_list,pages_read_engagement',
+        scope: META_CONFIG.OAUTH_SCOPES,
         response_type: 'code'
       });
 
-      const authUrl = `https://www.facebook.com/${this.META_API_VERSION}/dialog/oauth?${params.toString()}`;
+      const authUrl = `${META_URLS.OAUTH_DIALOG}?${params.toString()}`;
 
       // Salvar estado inicial no banco com state para validação
       await this._saveSignupStateWithState(userId, restaurantId, 'pending', encodedState);
 
-      console.log('🔍 Embedded Signup iniciado:', { userId, restaurantId, state: encodedState.substring(0, 50) + '...' });
+      console.log('🔍 Embedded Signup iniciado:', { 
+        userId, 
+        restaurantId, 
+        state: encodedState.substring(0, 50) + '...',
+        stateData 
+      });
 
       return {
         authUrl,
