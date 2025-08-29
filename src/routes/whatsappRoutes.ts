@@ -1399,7 +1399,7 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
   }
 });
 
-// --- NOVAS ROTAS PARA EMBEDDED SIGNUP META ---
+// --- NOVAS ROTAS PARA EMBEDDED SIGNUP META (BSP) ---
 
 /**
  * @swagger
@@ -1448,34 +1448,39 @@ router.get('/oauth/status', authenticateToken, async (req: AuthenticatedRequest,
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/signup/start', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    const restaurantId = req.user?.restaurant_id;
+router.get('/signup/start', authenticateToken, WhatsAppController.startEmbeddedSignup);
 
-    if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário ou restaurante não encontrado'
-      });
-    }
-
-    const result = await WhatsAppService.startEmbeddedSignup(userId, restaurantId);
-    
-    return res.json({
-      success: true,
-      data: result
-    });
-
-  } catch (error: any) {
-    console.error('Erro ao iniciar Embedded Signup:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao iniciar configuração do WhatsApp Business',
-      error: error.message
-    });
-  }
-});
+/**
+ * @swagger
+ * /api/whatsapp/oauth/callback-v2:
+ *   get:
+ *     summary: WhatsApp OAuth callback endpoint (versão modernizada)
+ *     description: |
+ *       Endpoint de callback modernizado usando o novo serviço de Embedded Signup.
+ *       Automatiza a criação de WABA para BSPs (Business Solution Providers).
+ *     tags: [WhatsApp, Embedded Signup]
+ *     parameters:
+ *       - in: query
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: OAuth authorization code from Meta
+ *       - in: query
+ *         name: state
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: State parameter for CSRF protection
+ *     responses:
+ *       200:
+ *         description: OAuth callback processed successfully
+ *       400:
+ *         description: Missing authorization code or state
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/oauth/callback-v2', WhatsAppController.handleOAuthCallback);
 
 /**
  * @swagger
@@ -1513,7 +1518,7 @@ router.get('/signup/start', authenticateToken, async (req: AuthenticatedRequest,
  *                   properties:
  *                     status:
  *                       type: string
- *                       enum: [pending, oauth_completed, waba_created, phone_configured, completed, failed]
+ *                       enum: [pending, oauth_completed, waba_created, awaiting_number_verification, completed, failed]
  *                     waba_id:
  *                       type: string
  *                       description: ID da conta WhatsApp Business
@@ -1540,69 +1545,7 @@ router.get('/signup/start', authenticateToken, async (req: AuthenticatedRequest,
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/signup/status', async (req: Request, res: Response) => {
-  try {
-    const { state } = req.query;
-    
-    // Se state fornecido, buscar por state (sem necessidade de autenticação)
-    if (state) {
-      const status = await WhatsAppService.getEmbeddedSignupStatus(undefined, undefined, state as string);
-      
-      return res.json({
-        success: true,
-        data: status
-      });
-    }
-
-    // Senão, verificar autenticação e buscar por usuário
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token de autenticação necessário quando state não fornecido'
-      });
-    }
-
-    // Implementar verificação de token aqui (similar ao middleware authenticateToken)
-    const token = authHeader.substring(7);
-    const jwt = require('jsonwebtoken');
-    
-    let decoded: any;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      return res.status(401).json({
-        success: false,
-        message: 'Token inválido'
-      });
-    }
-
-    const userId = decoded.id;
-    const restaurantId = decoded.restaurant_id;
-
-    if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário ou restaurante não encontrado'
-      });
-    }
-
-    const status = await WhatsAppService.getEmbeddedSignupStatus(userId, restaurantId);
-    
-    return res.json({
-      success: true,
-      data: status
-    });
-
-  } catch (error: any) {
-    console.error('Erro ao verificar status do Embedded Signup:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao verificar status',
-      error: error.message
-    });
-  }
-});
+router.get('/signup/status', WhatsAppController.getEmbeddedSignupStatus);
 
 /**
  * @swagger
@@ -1713,49 +1656,7 @@ router.post('/signup/verify-phone', authenticateToken, async (req: Authenticated
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/signup/register-phone', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    const restaurantId = req.user?.restaurant_id;
-    const { phone_number, pin } = req.body;
-
-    console.log('🔍 POST /signup/register-phone - Dados recebidos:', { 
-      userId, 
-      restaurantId, 
-      phone_number, 
-      hasPin: !!pin 
-    });
-
-    if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário ou restaurante não encontrado'
-      });
-    }
-
-    if (!phone_number) {
-      return res.status(400).json({
-        success: false,
-        message: 'Número de telefone é obrigatório'
-      });
-    }
-
-    const result = await WhatsAppService.registerPhoneNumber(userId, restaurantId, phone_number, pin);
-    
-    return res.json({
-      success: true,
-      data: result
-    });
-
-  } catch (error: any) {
-    console.error('🔍 ❌ Erro na rota /signup/register-phone:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao registrar número',
-      error: error.message
-    });
-  }
-});
+router.post('/signup/register-phone', authenticateToken, WhatsAppController.registerPhoneNumber);
 
 /**
  * @swagger
@@ -1796,49 +1697,7 @@ router.post('/signup/register-phone', authenticateToken, async (req: Authenticat
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/signup/verify-code', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    const restaurantId = req.user?.restaurant_id;
-    const { phone_number_id, verification_code } = req.body;
-
-    console.log('🔍 POST /signup/verify-code - Dados recebidos:', { 
-      userId, 
-      restaurantId, 
-      phone_number_id, 
-      code: '***' 
-    });
-
-    if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário ou restaurante não encontrado'
-      });
-    }
-
-    if (!phone_number_id || !verification_code) {
-      return res.status(400).json({
-        success: false,
-        message: 'ID do número e código de verificação são obrigatórios'
-      });
-    }
-
-    const result = await WhatsAppService.verifyPhoneNumberCode(userId, restaurantId, phone_number_id, verification_code);
-    
-    return res.json({
-      success: true,
-      data: result
-    });
-
-  } catch (error: any) {
-    console.error('🔍 ❌ Erro na rota /signup/verify-code:', error.message);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao verificar código',
-      error: error.message
-    });
-  }
-});
+router.post('/signup/verify-code', authenticateToken, WhatsAppController.verifyPhoneNumberCode);
 
 /**
  * @swagger
@@ -1877,42 +1736,7 @@ router.post('/signup/verify-code', authenticateToken, async (req: AuthenticatedR
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/signup/refresh-waba', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    const restaurantId = req.user?.restaurant_id;
-    const { state } = req.body;
-
-    if (!userId || !restaurantId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Usuário ou restaurante não encontrado'
-      });
-    }
-
-    if (!state) {
-      return res.status(400).json({
-        success: false,
-        message: 'State é obrigatório'
-      });
-    }
-
-    const result = await WhatsAppService.refreshWABAStatus(userId, restaurantId, state);
-    
-    return res.json({
-      success: true,
-      data: result
-    });
-
-  } catch (error: any) {
-    console.error('Erro ao atualizar status da WABA:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao atualizar status',
-      error: error.message
-    });
-  }
-});
+router.post('/signup/refresh-waba', authenticateToken, WhatsAppController.refreshWABAStatus);
 
 /**
  * @swagger
