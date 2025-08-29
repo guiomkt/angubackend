@@ -6,6 +6,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { WhatsAppController } from '../controllers/whatsappController';
 import WhatsAppService from '../services/whatsappService';
+import { META_URLS } from '../config/meta';
 
 const router = Router();
 
@@ -246,15 +247,16 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     if (state) {
       try {
         stateData = JSON.parse(decodeURIComponent(state as string));
-        isEmbeddedSignup = stateData.type === 'embedded_signup';
+        isEmbeddedSignup = stateData.flow === 'embedded_signup';
         console.log('🔍 OAuth Callback - Tipo de processo detectado:', { 
-          type: stateData.type, 
+          flow: stateData.flow, 
           isEmbeddedSignup,
-          userId: stateData.userId,
-          restaurantId: stateData.restaurantId
+          userId: stateData.user_id,
+          restaurantId: stateData.restaurant_id
         });
       } catch (error) {
         console.log('🔍 OAuth Callback - State não é JSON válido, continuando com fluxo padrão');
+        console.log('🔍 OAuth Callback - State recebido:', state);
       }
     }
 
@@ -267,7 +269,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     console.log('🔍 OAuth Callback - Redirect URI:', redirectUri);
     
-    const tokenResponse = await axios.post(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/oauth/access_token`, {
+    const tokenResponse = await axios.post(META_URLS.OAUTH_ACCESS_TOKEN, {
       client_id: process.env.FACEBOOK_APP_ID,
       client_secret: process.env.FACEBOOK_APP_SECRET,
       code: code,
@@ -285,7 +287,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     const expiresAt = new Date(Date.now() + (expires_in * 1000));
 
     // Se for Embedded Signup, processar fluxo específico
-    if (isEmbeddedSignup && stateData?.userId && stateData?.restaurantId) {
+    if (isEmbeddedSignup && stateData?.user_id && stateData?.restaurant_id) {
       console.log('🔍 OAuth Callback - Processando fluxo de Embedded Signup...');
       
       try {
@@ -303,11 +305,11 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         const { error: tokenError } = await supabase
           .from('meta_tokens')
           .upsert({
-            user_id: stateData.userId,
+            user_id: stateData.user_id,
             oauth_access_token: access_token,
             oauth_token_expires_at: expiresAt.toISOString(),
             oauth_token_type: 'long_lived',
-            restaurant_id: stateData.restaurantId,
+            restaurant_id: stateData.restaurant_id,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id' });
@@ -318,7 +320,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
         // Tentar descobrir WABA
         try {
-          const wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.userId, stateData.restaurantId);
+          const wabaId = await WhatsAppService.discoverOrCreateWABA(access_token, stateData.user_id, stateData.restaurant_id);
           
           // WABA encontrada ou criada - atualizar estado
           await supabase
@@ -399,7 +401,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     
     // Primeiro, vamos verificar as permissões do token
     try {
-      const permissionsResponse = await axios.get(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/permissions`, {
+      const permissionsResponse = await axios.get(`${META_URLS.GRAPH_API}/me/permissions`, {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -411,7 +413,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
 
     let pagesResponse: any;
     try {
-      pagesResponse = await axios.get(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/accounts`, {
+      pagesResponse = await axios.get(`${META_URLS.GRAPH_API}/me/accounts`, {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -453,7 +455,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // ESTRATÉGIA 1: Buscar WABAs diretamente do usuário (fonte primária)
     console.log('🔍 OAuth Callback - ESTRATÉGIA 1: Buscando WABAs direto do usuário...');
     try {
-      const directWabaResponse = await axios.get<{data: Array<{id: string; name: string; status: string}>}>(`https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/me/whatsapp_business_accounts`, {
+      const directWabaResponse = await axios.get<{data: Array<{id: string; name: string; status: string}>}>(`${META_URLS.GRAPH_API}/me/whatsapp_business_accounts`, {
         headers: {
           'Authorization': `Bearer ${access_token}`
         }
@@ -485,7 +487,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
         try {
           console.log(`🔍 OAuth Callback - Verificando página: ${page.name} (${page.id})`);
           
-          const requestUrl = `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${page.id}?fields=connected_whatsapp_business_account`;
+          const requestUrl = `${META_URLS.GRAPH_API}/${page.id}?fields=connected_whatsapp_business_account`;
           console.log(`🔍 OAuth Callback - Request: GET ${requestUrl}`);
           
           const wabaResponse = await axios.get(requestUrl, {
@@ -606,7 +608,7 @@ router.get('/oauth/callback', async (req: Request, res: Response) => {
     // 🎯 PRÓXIMO PASSO: Buscar números de telefone do WABA
     console.log(`🔍 OAuth Callback - Buscando números de telefone do WABA: ${wabaId}`);
     
-            const phoneRequestUrl = `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${wabaId}/phone_numbers`;
+            const phoneRequestUrl = `${META_URLS.GRAPH_API}/${wabaId}/phone_numbers`;
     console.log(`🔍 OAuth Callback - Request: GET ${phoneRequestUrl}`);
     console.log(`🔍 OAuth Callback - Authorization: Bearer <USER_ACCESS_TOKEN>`);
     
@@ -884,7 +886,7 @@ router.post('/send', authenticateToken, async (req: AuthenticatedRequest, res: R
     };
 
     const response = await axios.post(
-              `https://graph.facebook.com/v${WhatsAppService.META_API_VERSION}/${integration.phone_number_id}/messages`,
+              `${META_URLS.GRAPH_API}/${integration.phone_number_id}/messages`,
       messagePayload,
       {
         headers: {
