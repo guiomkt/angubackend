@@ -674,7 +674,7 @@ CREATE TABLE public.whatsapp_signup_states (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   restaurant_id uuid NOT NULL,
-  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'oauth_completed'::text, 'awaiting_waba_creation'::text, 'waba_created'::text, 'phone_configured'::text, 'completed'::text, 'failed'::text])),
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'oauth_completed'::text, 'awaiting_waba_creation'::text, 'waba_detected'::text, 'waba_created'::text, 'phone_configured'::text, 'completed'::text, 'failed'::text])),
   waba_id text,
   phone_number_id text,
   phone_number text,
