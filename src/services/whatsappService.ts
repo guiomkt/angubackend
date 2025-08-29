@@ -554,7 +554,9 @@ class WhatsAppService {
       const authUrl = `${META_URLS.OAUTH_DIALOG}?${params.toString()}`;
 
       // Salvar estado inicial no banco com state para validação
+      console.log('🔍 Salvando estado inicial no banco...', { userId, restaurantId, status: 'pending' });
       await this._saveSignupStateWithState(userId, restaurantId, 'pending', encodedState);
+      console.log('🔍 ✅ Estado salvo com sucesso no banco');
 
       console.log('🔍 Embedded Signup iniciado:', { 
         userId, 
@@ -606,7 +608,13 @@ class WhatsAppService {
       }
 
       // 2. Verificar se o state existe no banco
-      const { data: existingState } = await supabase
+      console.log('🔍 Buscando estado no banco...', { 
+        state: state.substring(0, 50) + '...', 
+        userId, 
+        restaurantId 
+      });
+      
+      const { data: existingState, error: stateError } = await supabase
         .from('whatsapp_signup_states')
         .select('*')
         .eq('state', state)
@@ -614,9 +622,30 @@ class WhatsAppService {
         .eq('restaurant_id', restaurantId)
         .single();
 
+      if (stateError) {
+        console.error('🔍 ❌ Erro ao buscar estado:', stateError);
+        throw new Error(`Erro ao buscar estado: ${stateError.message}`);
+      }
+
       if (!existingState) {
+        console.error('🔍 ❌ Estado não encontrado no banco');
+        
+        // Tentar buscar por user_id e restaurant_id para debug
+        const { data: debugStates } = await supabase
+          .from('whatsapp_signup_states')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('restaurant_id', restaurantId);
+        
+        console.log('🔍 Estados encontrados para debug:', debugStates);
         throw new Error('Estado de signup não encontrado ou expirado');
       }
+
+      console.log('🔍 ✅ Estado encontrado no banco:', { 
+        id: existingState.id, 
+        status: existingState.status, 
+        created_at: existingState.created_at 
+      });
 
       // 3. Trocar code por access_token
       const clientId = process.env.FACEBOOK_APP_ID;
