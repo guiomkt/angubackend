@@ -800,6 +800,8 @@ class WhatsAppService {
     phone_number_id?: string;
   }> {
     try {
+      console.log('🔍 Iniciando registro de número:', { userId, restaurantId, phoneNumber });
+
       // Buscar estado atual do signup
       const { data: signupState } = await supabase
         .from('whatsapp_signup_states')
@@ -817,8 +819,10 @@ class WhatsAppService {
       }
 
       const usedPin = pin || this.PHONE_REGISTRATION_PIN;
+      console.log('🔍 Usando PIN:', usedPin);
 
       // Registrar número via API da Meta
+      console.log('🔍 Chamando API da Meta para registrar número...');
       const registerResponse = await axios.post<{ id: string; display_phone_number: string; status: string }>(
         `${this.META_GRAPH_URL}/${signupState.waba_id}/phone_numbers`,
         {
@@ -831,6 +835,8 @@ class WhatsAppService {
         }
       );
 
+      console.log('🔍 Resposta da API Meta (registro):', JSON.stringify(registerResponse.data, null, 2));
+
       const phoneNumberId = registerResponse.data.id;
 
       // Atualizar estado do signup
@@ -841,7 +847,7 @@ class WhatsAppService {
         verification_status: 'pending'
       });
 
-      console.log('🔍 Número registrado com sucesso:', { phoneNumberId, phoneNumber });
+      console.log('🔍 ✅ Número registrado com sucesso:', { phoneNumberId, phoneNumber });
 
       return {
         success: true,
@@ -850,7 +856,7 @@ class WhatsAppService {
       };
 
     } catch (error: any) {
-      console.error('Erro ao registrar número de telefone:', error);
+      console.error('🔍 ❌ Erro ao registrar número de telefone:', error.response?.data || error.message);
       throw new Error(`Falha ao registrar número: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -869,6 +875,8 @@ class WhatsAppService {
     integration_id?: string;
   }> {
     try {
+      console.log('🔍 Iniciando verificação de código:', { userId, restaurantId, phoneNumberId, code: '***' });
+
       // Buscar estado atual do signup
       const { data: signupState } = await supabase
         .from('whatsapp_signup_states')
@@ -886,6 +894,7 @@ class WhatsAppService {
       }
 
       // Verificar código via API da Meta
+      console.log('🔍 Chamando API da Meta para verificar código...');
       await axios.post(
         `${this.META_GRAPH_URL}/${phoneNumberId}/verify`,
         {
@@ -897,7 +906,10 @@ class WhatsAppService {
         }
       );
 
+      console.log('🔍 ✅ Código verificado com sucesso');
+
       // Buscar informações atualizadas do número
+      console.log('🔍 Buscando informações atualizadas do número...');
       const phoneInfo = await axios.get<PhoneInfoResponse>(
         `${this.META_GRAPH_URL}/${phoneNumberId}`,
         {
@@ -905,6 +917,8 @@ class WhatsAppService {
           headers: { 'Authorization': `Bearer ${signupState.access_token}` }
         }
       );
+
+      console.log('🔍 Informações do número verificado:', JSON.stringify(phoneInfo.data, null, 2));
 
       // Criar integração completa
       const integrationData = {
@@ -917,6 +931,7 @@ class WhatsAppService {
         status: phoneInfo.data.status || 'CONNECTED'
       };
 
+      console.log('🔍 Criando integração final...', integrationData);
       const integrationId = await this._persistIntegrationData(integrationData);
 
       // Atualizar estado para completado
@@ -926,7 +941,7 @@ class WhatsAppService {
         business_name: phoneInfo.data.verified_name || signupState.business_name
       });
 
-      console.log('🔍 Verificação de código concluída com sucesso:', { phoneNumberId, integrationId });
+      console.log('🔍 ✅ Processo de Embedded Signup concluído com sucesso:', { phoneNumberId, integrationId });
 
       return {
         success: true,
@@ -935,7 +950,7 @@ class WhatsAppService {
       };
 
     } catch (error: any) {
-      console.error('Erro ao verificar código do telefone:', error);
+      console.error('🔍 ❌ Erro ao verificar código do telefone:', error.response?.data || error.message);
       throw new Error(`Falha ao verificar código: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -1127,10 +1142,10 @@ class WhatsAppService {
     restaurantId: string
   ): Promise<string> {
     try {
-      console.log('🔍 Iniciando descoberta/criação de WABA...');
+      console.log('🔍 Iniciando descoberta/criação de WABA...', { userId, restaurantId });
       
       // ESTRATÉGIA 1: Buscar WABAs diretamente do usuário (fonte primária)
-      console.log('🔍 ESTRATÉGIA 1: Buscando WABAs diretamente do usuário...');
+      console.log('🔍 ESTRATÉGIA 1: Buscando WABAs diretamente via /me/whatsapp_business_accounts...');
       
       try {
         const wabaResponse = await axios.get<WABAListResponse>(
@@ -1139,6 +1154,8 @@ class WhatsAppService {
             headers: { 'Authorization': `Bearer ${accessToken}` }
           }
         );
+
+        console.log('🔍 Resposta WABAs diretos:', JSON.stringify(wabaResponse.data, null, 2));
 
         if (wabaResponse.data.data && wabaResponse.data.data.length > 0) {
           const existingWABA = wabaResponse.data.data[0];
@@ -1163,7 +1180,7 @@ class WhatsAppService {
         );
 
         const pages = pagesResponse.data?.data || [];
-        console.log(`🔍 Páginas encontradas: ${pages.length}`);
+        console.log(`🔍 Páginas encontradas: ${pages.length}`, pages.map(p => ({ id: p.id, name: p.name })));
 
         // Para cada página, verificar se tem WABA conectado
         for (const page of pages) {
@@ -1177,6 +1194,8 @@ class WhatsAppService {
               }
             );
 
+            console.log(`🔍 Resposta página ${page.name}:`, JSON.stringify(pageWabaResponse.data, null, 2));
+
             if (pageWabaResponse.data?.connected_whatsapp_business_account) {
               const wabaId = pageWabaResponse.data.connected_whatsapp_business_account.id;
               console.log('🔍 ✅ WABA encontrado via página:', wabaId);
@@ -1184,7 +1203,7 @@ class WhatsAppService {
             }
           } catch (error: any) {
             // Página sem WABA conectado - continuar para próxima
-            console.log(`🔍 Página ${page.name} sem WABA conectado`);
+            console.log(`🔍 Página ${page.name} sem WABA conectado:`, error.response?.data?.error?.message || 'sem WABA');
             continue;
           }
         }
@@ -1193,10 +1212,11 @@ class WhatsAppService {
       }
 
       // ESTRATÉGIA 3: Criação automática de WABA via API
-      console.log('🔍 ESTRATÉGIA 3: Nenhuma WABA encontrada. Criando automaticamente...');
+      console.log('🔍 ESTRATÉGIA 3: Nenhuma WABA encontrada. Tentando criação automática...');
       
       try {
         // Primeiro, buscar o Business ID do usuário
+        console.log('🔍 Buscando Business IDs do usuário...');
         const businessResponse = await axios.get<BusinessListResponse>(
           `${this.META_GRAPH_URL}/me/businesses`,
           {
@@ -1204,19 +1224,23 @@ class WhatsAppService {
           }
         );
 
+        console.log('🔍 Resposta businesses:', JSON.stringify(businessResponse.data, null, 2));
+
         const businesses = businessResponse.data?.data || [];
         if (businesses.length === 0) {
-          throw new Error('Nenhum Business Manager encontrado para o usuário');
+          console.log('🔍 ❌ Nenhum Business Manager encontrado para o usuário');
+          throw new Error('WABA_NOT_FOUND');
         }
 
         const businessId = businesses[0].id;
-        console.log('🔍 Business ID encontrado:', businessId);
+        console.log('🔍 Business ID selecionado:', businessId);
 
         // Criar WABA automaticamente via API
+        console.log('🔍 Criando WABA automaticamente...');
         const createWabaResponse = await axios.post<CreateClientWABAResponse>(
           `${this.META_GRAPH_URL}/${businessId}/client_whatsapp_applications`,
           {
-            name: `WhatsApp Business - ${new Date().toISOString().split('T')[0]}`
+            name: `WhatsApp Business Angu - ${new Date().toISOString().split('T')[0]}`
           },
           {
             headers: { 
@@ -1229,8 +1253,9 @@ class WhatsAppService {
         const newWabaId = createWabaResponse.data.id;
         console.log('🔍 ✅ Nova WABA criada com sucesso:', newWabaId);
 
-        // Aguardar um momento para a WABA ser propagada
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Aguardar propagação na API da Meta (importante!)
+        console.log('🔍 Aguardando propagação da nova WABA...');
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 segundos
 
         // Verificar se a WABA foi criada e está disponível
         try {
@@ -1241,6 +1266,8 @@ class WhatsAppService {
             }
           );
 
+          console.log('🔍 Verificação pós-criação:', JSON.stringify(verifyWabaResponse.data, null, 2));
+
           if (verifyWabaResponse.data.data && verifyWabaResponse.data.data.length > 0) {
             const createdWABA = verifyWabaResponse.data.data.find(waba => waba.id === newWabaId);
             if (createdWABA) {
@@ -1248,25 +1275,23 @@ class WhatsAppService {
               return newWabaId;
             }
           }
-        } catch (verifyError) {
-          console.log('🔍 Aviso: Erro ao verificar WABA criada, mas continuando...', verifyError);
-        }
 
-        // Se chegou até aqui, a WABA foi criada
-        return newWabaId;
+          // Se não encontrou na verificação, mas foi criada, retornar mesmo assim
+          console.log('🔍 ⚠️ WABA criada mas não aparece na listagem ainda. Retornando ID:', newWabaId);
+          return newWabaId;
+
+        } catch (verifyError: any) {
+          console.log('🔍 ⚠️ Erro ao verificar WABA criada, mas continuando...', verifyError.response?.data || verifyError.message);
+          return newWabaId;
+        }
 
       } catch (createError: any) {
         console.error('🔍 ❌ Erro ao criar WABA automaticamente:', createError.response?.data || createError.message);
         
         // Se falhou na criação automática, marcar como awaiting_waba_creation
-        await supabase
-          .from('whatsapp_signup_states')
-          .update({
-            status: 'awaiting_waba_creation',
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', userId)
-          .eq('restaurant_id', restaurantId);
+        await this._updateSignupState(userId, restaurantId, {
+          status: 'awaiting_waba_creation'
+        });
 
         throw new Error('WABA_NOT_FOUND');
       }
@@ -1275,7 +1300,7 @@ class WhatsAppService {
       if (error.message === 'WABA_NOT_FOUND') {
         throw error;
       }
-      console.error('Erro ao descobrir/criar WABA:', error);
+      console.error('🔍 ❌ Erro geral ao descobrir/criar WABA:', error);
       throw new Error(`Falha ao descobrir/criar WhatsApp Business: ${error.response?.data?.error?.message || error.message}`);
     }
   }
