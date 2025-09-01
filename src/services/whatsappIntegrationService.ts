@@ -27,6 +27,49 @@ interface TokenExchangeResult {
     expires_in: number;
     token_type: string;
   };
+  error?: string;
+}
+
+// --- Interfaces para respostas da API Meta ---
+
+interface MetaWABAResponse {
+  id: string;
+  name?: string;
+  status?: string;
+}
+
+interface MetaApplicationResponse {
+  id: string;
+  name?: string;
+  status?: string;
+}
+
+interface MetaBusinessResponse {
+  data: Array<{
+    id: string;
+    name: string;
+  }>;
+}
+
+interface MetaWABAListResponse {
+  whatsapp_business_accounts?: {
+    data: Array<{
+      id: string;
+      name: string;
+      status: string;
+    }>;
+  };
+}
+
+interface MetaTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+interface MetaUserResponse {
+  name: string;
+  id: string;
 }
 
 // --- ESTRATÉGIA 1: client_whatsapp_applications ---
@@ -41,13 +84,14 @@ export async function createViaClientWhatsApp(
   userId: string,
   restaurantId: string
 ): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 ESTRATÉGIA 1: client_whatsapp_applications iniciada...');
     
-    const startTime = Date.now();
     const timeout = 30000; // 30 segundos
     
-    const response = await axios.post(
+    const response = await axios.post<MetaWABAResponse>(
       `${META_URLS.GRAPH_API}/${BSP_CONFIG.BSP_BUSINESS_ID}/client_whatsapp_applications`,
       {
         name: `WhatsApp Business - ${Date.now()}`,
@@ -124,13 +168,14 @@ export async function createViaDirectWABA(
   userId: string,
   restaurantId: string
 ): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 ESTRATÉGIA 2: whatsapp_business_accounts iniciada...');
     
-    const startTime = Date.now();
     const timeout = 30000; // 30 segundos
     
-    const response = await axios.post(
+    const response = await axios.post<MetaWABAResponse>(
       `${META_URLS.GRAPH_API}/${businessId}/whatsapp_business_accounts`,
       {
         name: `WhatsApp Business - ${Date.now()}`,
@@ -206,13 +251,14 @@ export async function createViaApplications(
   userId: string,
   restaurantId: string
 ): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 ESTRATÉGIA 3: applications iniciada...');
     
-    const startTime = Date.now();
     const timeout = 30000; // 30 segundos
     
-    const response = await axios.post(
+    const response = await axios.post<MetaApplicationResponse>(
       `${META_URLS.GRAPH_API}/${BSP_CONFIG.BSP_BUSINESS_ID}/applications`,
       {
         name: `WhatsApp Business App - ${Date.now()}`,
@@ -290,13 +336,14 @@ export async function createViaOfficialFlow(
   userId: string,
   restaurantId: string
 ): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 ESTRATÉGIA 4: Fluxo oficial Meta iniciado...');
     
-    const startTime = Date.now();
     const timeout = 30000; // 30 segundos
     
-    const response = await axios.post(
+    const response = await axios.post<MetaWABAResponse>(
       `${META_URLS.GRAPH_API}/whatsapp_business_accounts`,
       {
         business_manager_id: businessId,
@@ -372,14 +419,15 @@ export async function createViaGlobalEndpoint(
   userId: string,
   restaurantId: string
 ): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
   try {
     console.log('🚀 ESTRATÉGIA 5: Endpoint global iniciado...');
     
-    const startTime = Date.now();
     const timeout = 30000; // 30 segundos
     
     // Primeiro verificar se o token BSP é válido
-    const testResponse = await axios.get(
+    const testResponse = await axios.get<MetaUserResponse>(
       `${META_URLS.GRAPH_API}/me`,
       {
         headers: { 'Authorization': `Bearer ${bspToken}` },
@@ -390,7 +438,7 @@ export async function createViaGlobalEndpoint(
     console.log('🚀 ✅ Token BSP válido, usuário:', testResponse.data.name);
 
     // Tentar criar WABA via endpoint global
-    const response = await axios.post(
+    const response = await axios.post<MetaWABAResponse>(
       `${META_URLS.GRAPH_API}/whatsapp_business_accounts`,
       {
         name: `WhatsApp Business Global - ${Date.now()}`,
@@ -471,7 +519,7 @@ export async function pollForWABA(
     
     try {
       // Tentar encontrar WABA no business do usuário
-      const searchResponse = await axios.get(
+      const searchResponse = await axios.get<MetaWABAListResponse>(
         `${META_URLS.GRAPH_API}/${businessId}?fields=whatsapp_business_accounts{id,name,status}`,
         {
           headers: { 'Authorization': `Bearer ${userToken}` },
@@ -594,7 +642,7 @@ export async function exchangeCodeForToken(
       code: code
     });
 
-    const tokenResponse = await axios.get(
+    const tokenResponse = await axios.get<MetaTokenResponse>(
       `${META_URLS.OAUTH_ACCESS_TOKEN}?${tokenParams.toString()}`
     );
 
@@ -647,7 +695,7 @@ export async function discoverBusinessId(userToken: string): Promise<string | nu
   try {
     console.log('🔍 Descobrindo business_id...');
     
-    const businessResponse = await axios.get(
+    const businessResponse = await axios.get<MetaBusinessResponse>(
       `${META_URLS.GRAPH_API}/me/businesses?fields=id,name`,
       {
         headers: { 'Authorization': `Bearer ${userToken}` }
@@ -681,7 +729,7 @@ export async function discoverExistingWABA(
   try {
     console.log('🔍 Buscando WABA existente...');
     
-    const wabaResponse = await axios.get(
+    const wabaResponse = await axios.get<MetaWABAListResponse>(
       `${META_URLS.GRAPH_API}/${businessId}?fields=whatsapp_business_accounts{id,name,status}`,
       {
         headers: { 'Authorization': `Bearer ${userToken}` }
@@ -717,7 +765,7 @@ export async function finalizeIntegration(
     console.log('🎯 Finalizando integração...');
     
     // Buscar informações da WABA
-    const wabaResponse = await axios.get(
+    const wabaResponse = await axios.get<MetaWABAResponse>(
       `${META_URLS.GRAPH_API}/${wabaId}?fields=id,name,status`,
       {
         headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
@@ -839,4 +887,4 @@ export default {
   finalizeIntegration,
   pollAndFinalize,
   logStrategyFailure
-}; 
+};
