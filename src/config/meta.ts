@@ -33,11 +33,11 @@ export const META_URLS = {
 // Configurações para BSP (Business Solution Provider)
 export const BSP_CONFIG = {
   // Business ID do nosso BSP
-  BSP_BUSINESS_ID: '3246838805460539',
+  BSP_BUSINESS_ID: '100442081662109',
   // System User Access Token para operações de BSP
-  SYSTEM_USER_ACCESS_TOKEN: 'f1509ad9d2ff834f70c04aaef5055e979f3ca72f1d611aeaa0272d396b8f1733',
+  SYSTEM_USER_ACCESS_TOKEN: 'EAAuIZB5GkdjsBPcIkR0omZB3CBkwU2B5r8scoKrM5JZC4c1R9QZBlS6sTLjSdV1FIZA8p5cBGq4rlxKJQCrguX3CSpg1cdsULnSJJZAaqeZBbOEjJ4UqkYNLExS2ulcWuyiQ76yCGaWVMKemmoJUZBF2R2jkZAmsKSgZCyZCDry8eqUwJ7w6v0ddFWWArsuiiUziXiHLQZDZD',
   // Token permanente para operações avançadas
-  PERMANENT_TOKEN: '2552c2e8b5957d753135fd4198a43ab0cb2dd1ca2ce093c3506772b6012fd922',
+  PERMANENT_TOKEN: '2552c2e8b5957d753135fd4198a43ab0cb2dd1ca72f1d611aeaa0272d396b8f1733',
 } as const;
 
 // Configurações BSP hardcoded para produção

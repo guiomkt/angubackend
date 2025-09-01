@@ -1294,8 +1294,12 @@ class WhatsAppService {
       // ESTRATÉGIA 2: Se não encontrou WABA existente, tentar criar via BSP
       console.log('🔍 ESTRATÉGIA 2: Nenhuma WABA existente encontrada, tentando criar via BSP...');
       
+      if (!userAccessToken) {
+        throw new Error('User Access Token é necessário para criar WABA via BSP');
+      }
+      
       try {
-        const wabaId = await this._createWABAViaBSP(userId, restaurantId);
+        const wabaId = await this._createWABAViaBSP(userId, restaurantId, userAccessToken);
         console.log('🔍 ✅ WABA criada automaticamente via BSP:', wabaId);
         return wabaId;
       } catch (createError: any) {
@@ -1324,25 +1328,22 @@ class WhatsAppService {
    */
   private static async _createWABAViaBSP(
     userId: string, 
-    restaurantId: string
+    restaurantId: string,
+    userAccessToken: string
   ): Promise<string> {
     try {
       console.log('🔍 Iniciando criação automática de WABA via BSP...');
       
       // Verificar se temos as configurações de BSP necessárias
       console.log('🔍 Verificando configurações BSP...');
-      console.log('🔍 BSP_BUSINESS_ID:', BSP_CONFIG.BSP_BUSINESS_ID ? '✅ Configurado' : '❌ NÃO CONFIGURADO');
       console.log('🔍 SYSTEM_USER_ACCESS_TOKEN:', BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN ? '✅ Configurado' : '❌ NÃO CONFIGURADO');
       
-      if (!BSP_CONFIG.BSP_BUSINESS_ID || !BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN) {
-        console.error('🔍 ❌ Configurações de BSP não encontradas:', {
-          hasBspBusinessId: !!BSP_CONFIG.BSP_BUSINESS_ID,
-          hasSystemUserToken: !!BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN
-        });
-        throw new Error('BSP_CONFIG_MISSING');
+      if (!BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN) {
+        console.error('🔍 ❌ System User Token não encontrado');
+        throw new Error('SYSTEM_USER_TOKEN_MISSING');
       }
       
-      console.log('🔍 ✅ Configurações BSP válidas');
+      console.log('🔍 ✅ Token BSP válido');
 
       // Testar token BSP primeiro
       console.log('🔍 Testando token BSP...');
@@ -1359,14 +1360,16 @@ class WhatsAppService {
         throw new Error(`Token BSP inválido: ${testError.response?.data?.error?.message || testError.message}`);
       }
       
-      // Buscar Business ID do usuário primeiro
-      console.log('🔍 Buscando Business ID do usuário...');
-      console.log('🔍 Usando System User Token para BSP:', BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN.substring(0, 10) + '...');
+      // Usar Business ID fixo do BSP
+      console.log('🔍 Usando Business ID fixo do BSP:', BSP_CONFIG.BSP_BUSINESS_ID);
+      
+      // Buscar Business ID do usuário (cliente) para criar WABA
+      console.log('🔍 Buscando Business ID do usuário cliente...');
       
       const businessResponse = await axios.get<BusinessListResponse>(
         `${this.META_GRAPH_URL}/me/businesses?fields=id,name`,
         {
-          headers: { 'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}` }
+          headers: { 'Authorization': `Bearer ${userAccessToken}` }
         }
       );
 
