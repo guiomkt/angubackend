@@ -1443,24 +1443,68 @@ class WhatsAppService {
         } catch (altError: any) {
           console.log('🔍 ❌ Endpoint alternativo também falhou:', altError.response?.data?.error?.message);
           
-          // Tentativa 3: Usar o endpoint de criação de aplicação
-          console.log('🔍 Tentativa 3: Endpoint de criação de aplicação...');
+                // Tentativa 3: Usar o endpoint de criação de aplicação
+      console.log('🔍 Tentativa 3: Endpoint de criação de aplicação...');
+      try {
+        createWabaResponse = await axios.post(
+          `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/applications`,
+          {
+            name: `WhatsApp Business - ${businessName}`,
+            business_id: businessId
+          },
+          {
+            headers: { 
+              'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        console.log('🔍 ✅ Aplicação criada via endpoint de aplicações');
+      } catch (appError: any) {
+        console.log('🔍 ❌ Endpoint de aplicações também falhou:', appError.response?.data?.error?.message);
+        
+        // Tentativa 4: Usar o fluxo oficial do Meta - Embedded Signup
+        console.log('🔍 Tentativa 4: Fluxo oficial do Meta - Embedded Signup...');
+        try {
+          // Criar WABA usando o fluxo oficial
           createWabaResponse = await axios.post(
-            `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/applications`,
+            `${this.META_GRAPH_URL}/${businessId}/whatsapp_business_accounts`,
             {
               name: `WhatsApp Business - ${businessName}`,
-              business_id: businessId
+              access_token: userAccessToken
             },
             {
               headers: { 
-                'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
+                'Authorization': `Bearer ${userAccessToken}`,
                 'Content-Type': 'application/json'
               }
             }
           );
-          console.log('🔍 ✅ Aplicação criada via endpoint de aplicações');
+          console.log('🔍 ✅ WABA criada via fluxo oficial do Meta');
+        } catch (metaError: any) {
+          console.log('🔍 ❌ Fluxo oficial do Meta também falhou:', metaError.response?.data?.error?.message);
+          
+          // Tentativa 5: Usar o endpoint de criação de conta WhatsApp
+          console.log('🔍 Tentativa 5: Endpoint de criação de conta WhatsApp...');
+          createWabaResponse = await axios.post(
+            `${this.META_GRAPH_URL}/whatsapp_business_accounts`,
+            {
+              name: `WhatsApp Business - ${businessName}`,
+              business_id: businessId,
+              access_token: userAccessToken
+            },
+            {
+              headers: { 
+                'Authorization': `Bearer ${userAccessToken}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          console.log('🔍 ✅ WABA criada via endpoint de conta WhatsApp');
         }
       }
+    }
+  }
 
       const newWabaId = createWabaResponse.data.id;
       console.log('🔍 ✅ WABA criada automaticamente via BSP:', { 
@@ -1475,15 +1519,54 @@ class WhatsAppService {
         status: 'waba_created'
       });
 
-      // Aguardar propagação da criação (3 segundos)
+      // Aguardar propagação da criação com polling
       console.log('🔍 Aguardando propagação da WABA criada...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      let wabaFound = false;
+      let attempts = 0;
+      const maxAttempts = 10;
+      let finalWabaId = newWabaId;
+      
+      while (!wabaFound && attempts < maxAttempts) {
+        attempts++;
+        console.log(`🔍 Tentativa ${attempts}/${maxAttempts} de encontrar WABA criada...`);
+        
+        try {
+          // Tentar encontrar WABA no business do usuário
+          const searchResponse = await axios.get<BusinessWABAResponse>(
+            `${this.META_GRAPH_URL}/${businessId}?fields=whatsapp_business_accounts{id,name,status}`,
+            {
+              headers: { 'Authorization': `Bearer ${userAccessToken}` }
+            }
+          );
+          
+          if (searchResponse.data?.whatsapp_business_accounts?.data && 
+              searchResponse.data.whatsapp_business_accounts.data.length > 0) {
+            const foundWaba = searchResponse.data.whatsapp_business_accounts.data[0];
+            console.log('🔍 ✅ WABA encontrada via polling:', foundWaba);
+            finalWabaId = foundWaba.id;
+            wabaFound = true;
+            break;
+          }
+        } catch (searchError: any) {
+          console.log(`🔍 Tentativa ${attempts} falhou:`, searchError.response?.data?.error?.message || 'erro na busca');
+        }
+        
+        // Aguardar 3 segundos antes da próxima tentativa
+        if (!wabaFound) {
+          console.log('🔍 Aguardando 3 segundos antes da próxima tentativa...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+      
+      if (!wabaFound) {
+        console.log('🔍 ⚠️ WABA não encontrada após todas as tentativas, mas pode ter sido criada');
+      }
 
       // Verificar se WABA foi criada com sucesso
       try {
-        console.log('🔍 Verificando WABA criada:', newWabaId);
+        console.log('🔍 Verificando WABA criada:', finalWabaId);
         const verifyResponse = await axios.get<WABAInfoResponse>(
-          `${this.META_GRAPH_URL}/${newWabaId}`,
+          `${this.META_GRAPH_URL}/${finalWabaId}`,
           {
             params: { fields: 'id,name,status' },
             headers: { 'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}` }
@@ -1491,13 +1574,13 @@ class WhatsAppService {
         );
 
         console.log('🔍 ✅ WABA verificada após criação:', verifyResponse.data);
-        return newWabaId;
+        return finalWabaId;
 
       } catch (verifyError: any) {
         console.log('🔍 ❌ Erro ao verificar WABA criada:', verifyError.response?.data || verifyError.message);
         // WABA foi criada mas ainda não está propagada, retornar ID mesmo assim
-        console.log('🔍 ⚠️ WABA criada mas não verificada, retornando ID:', newWabaId);
-        return newWabaId;
+        console.log('🔍 ⚠️ WABA criada mas não verificada, retornando ID:', finalWabaId);
+        return finalWabaId;
       }
 
     } catch (error: any) {
