@@ -2728,7 +2728,7 @@ router.post('/waba/complete-flow', async (req: Request, res: Response) => {
 
     // 3. ESTRATÉGIA 1: Buscar WABA existente
     console.log('🎯 Passo 3: Buscando WABA existente...');
-    const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(businessId, tokenData.data!.access_token, restaurant_id);
+    const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(tokenData.data!.access_token, restaurant_id);
     
     if (existingWABA.found && existingWABA.waba_id) {
       console.log('🎯 ✅ WABA existente encontrada:', existingWABA.waba_id);
@@ -3003,7 +3003,7 @@ async function upsertContact(restaurant_id: string, phone_number: string, contac
 }
 
 // ============================================================================
-// NOVOS ENDPOINTS PARA FLUXO COMPLETO DE INTEGRAÇÃO WHATSAPP BUSINESS CLOUD API
+// ENDPOINTS CORRIGIDOS PARA FLUXO COMPLETO DE INTEGRAÇÃO WHATSAPP BUSINESS CLOUD API
 // ============================================================================
 
 /**
@@ -3124,18 +3124,8 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
 
     console.log('🔍 Iniciando descoberta de WABA...');
 
-    // Descobrir business_id
-    const businessId = await WhatsAppIntegrationService.discoverBusinessId(access_token);
-    if (!businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Business ID não encontrado para o usuário'
-      });
-    }
-
-    // ESTRATÉGIA 1: Buscar WABA existente
+    // ✅ CORRIGIDO: Usa a nova função que já descobre business_id internamente
     const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(
-      businessId, 
       access_token, 
       restaurant_id
     );
@@ -3150,7 +3140,7 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
           waba_id: existingWABA.waba_id,
           strategy: existingWABA.strategy,
           status: 'found',
-          business_id: businessId
+          business_id: existingWABA.business_id
         }
       });
     }
@@ -3161,13 +3151,13 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
       message: 'WABA não encontrada, iniciando processo de criação',
       data: {
         status: 'not_found',
-        business_id: businessId,
-        next_step: 'create_strategies'
+        business_id: existingWABA.business_id,
+        next_step: 'create_via_bsp'
       }
     });
 
   } catch (error: any) {
-    console.error('�� ❌ Erro na descoberta de WABA:', error.response?.data || error.message);
+    console.error('🔍 ❌ Erro na descoberta de WABA:', error.response?.data || error.message);
     
     return res.status(500).json({
       success: false,
@@ -3179,9 +3169,9 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
 
 /**
  * @swagger
- * /api/whatsapp/waba/create-strategies:
+ * /api/whatsapp/waba/create-via-bsp:
  *   post:
- *     summary: Executa todas as 5 estratégias de criação de WABA
+ *     summary: Cria WABA via BSP usando endpoint correto
  *     tags: [WhatsApp Integration]
  *     requestBody:
  *       required: true
@@ -3189,14 +3179,11 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [business_id, access_token, restaurant_id]
+ *             required: [business_id, restaurant_id]
  *             properties:
  *               business_id:
  *                 type: string
- *                 description: Business ID do Facebook
- *               access_token:
- *                 type: string
- *                 description: User access token do Facebook
+ *                 description: Business ID do cliente
  *               restaurant_id:
  *                 type: string
  *                 format: uuid
@@ -3209,100 +3196,49 @@ router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
  *       500:
  *         description: Erro interno
  */
-router.post('/waba/create-strategies', async (req: Request, res: Response) => {
+router.post('/waba/create-via-bsp', async (req: Request, res: Response) => {
   try {
-    const { business_id, access_token, restaurant_id } = req.body;
+    const { business_id, restaurant_id } = req.body;
 
-    if (!business_id || !access_token || !restaurant_id) {
+    if (!business_id || !restaurant_id) {
       return res.status(400).json({
         success: false,
-        message: 'Business ID, access token e restaurant_id são obrigatórios'
+        message: 'Business ID e restaurant_id são obrigatórios'
       });
     }
 
-    console.log('🚀 Iniciando criação de WABA com múltiplas estratégias...');
+    console.log('🚀 Iniciando criação de WABA via BSP...');
 
-    // Verificar se temos token BSP
-    const bspToken = BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN;
-    if (!bspToken) {
-      console.error('🚀 ❌ Token BSP não configurado');
-      return res.status(500).json({
-        success: false,
-        message: 'Configuração BSP incompleta - token não encontrado'
-      });
-    }
+    // ✅ CORRIGIDO: Usa a nova função que implementa o endpoint correto
+    const wabaResult = await WhatsAppIntegrationService.createWABAViaBSP(
+      business_id,
+      restaurant_id
+    );
 
-    // Definir estratégias em ordem de prioridade
-    const strategies = [
-      { 
-        name: 'client_whatsapp_applications', 
-        fn: WhatsAppIntegrationService.createViaClientWhatsApp 
-      },
-      { 
-        name: 'whatsapp_business_accounts', 
-        fn: WhatsAppIntegrationService.createViaDirectWABA 
-      },
-      { 
-        name: 'applications', 
-        fn: WhatsAppIntegrationService.createViaApplications 
-      },
-      { 
-        name: 'official_flow', 
-        fn: WhatsAppIntegrationService.createViaOfficialFlow 
-      },
-      { 
-        name: 'global_endpoint', 
-        fn: WhatsAppIntegrationService.createViaGlobalEndpoint 
-      }
-    ];
-
-    // Tentar cada estratégia
-    for (const strategy of strategies) {
-      try {
-        console.log(`🚀 Tentando estratégia: ${strategy.name}`);
-        
-        const result = await strategy.fn(business_id, bspToken, 'system_user', restaurant_id);
-        
-        if (result.success && result.waba_id) {
-          console.log(`🚀 ✅ Estratégia ${strategy.name} sucesso:`, result.waba_id);
-          
-          return res.json({
-            success: true,
-            message: `WABA criada com sucesso via estratégia ${strategy.name}`,
-            data: {
-              waba_id: result.waba_id,
-              strategy: strategy.name,
-              next_step: 'polling_verification'
-            }
-          });
+    if (wabaResult.success && wabaResult.waba_id) {
+      return res.json({
+        success: true,
+        message: 'WABA criada com sucesso via BSP',
+        data: {
+          waba_id: wabaResult.waba_id,
+          strategy: 'bsp_client_whatsapp_business_accounts',
+          next_step: 'polling_verification'
         }
-      } catch (error: any) {
-        console.log(`🚀 ❌ Estratégia ${strategy.name} falhou:`, error.message);
-        await WhatsAppIntegrationService.logStrategyFailure(strategy.name, error, restaurant_id);
-        continue;
-      }
+      });
     }
 
-    // Se todas falharam
-    console.log('�� ❌ Todas as estratégias falharam');
-    
     return res.json({
       success: false,
-      message: 'Todas as estratégias de criação falharam',
-      data: {
-        status: 'all_strategies_failed',
-        strategies_tried: strategies.map(s => s.name),
-        next_step: 'manual_creation',
-        message: 'Complete a criação manualmente no Facebook Business Manager'
-      }
+      message: 'Falha na criação de WABA via BSP',
+      error: wabaResult.error
     });
 
   } catch (error: any) {
-    console.error('🚀 ❌ Erro nas estratégias de criação:', error.response?.data || error.message);
+    console.error('🚀 ❌ Erro na criação via BSP:', error.response?.data || error.message);
     
     return res.status(500).json({
       success: false,
-      message: 'Erro interno nas estratégias de criação',
+      message: 'Erro interno na criação via BSP',
       error: error.response?.data?.error?.message || error.message
     });
   }
@@ -3460,20 +3396,9 @@ router.post('/waba/complete-flow', async (req: Request, res: Response) => {
       });
     }
 
-    // 2. Descobrir business_id
-    console.log('🎯 Passo 2: Descobrindo business_id...');
-    const businessId = await WhatsAppIntegrationService.discoverBusinessId(tokenResult.data.access_token);
-    if (!businessId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Business ID não encontrado para o usuário'
-      });
-    }
-
-    // 3. ESTRATÉGIA 1: Buscar WABA existente
-    console.log('🎯 Passo 3: Buscando WABA existente...');
+    // 2. ESTRATÉGIA 1: Buscar WABA existente
+    console.log('🎯 Passo 2: Buscando WABA existente...');
     const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(
-      businessId, 
       tokenResult.data.access_token, 
       restaurant_id
     );
@@ -3493,78 +3418,59 @@ router.post('/waba/complete-flow', async (req: Request, res: Response) => {
         message: 'Integração concluída com WABA existente',
         data: {
           waba_id: existingWABA.waba_id,
-          strategy: 'existing_waba',
+          strategy: existingWABA.strategy,
           status: 'completed',
           integration_id: finalResult.integration_id
         }
       });
     }
 
-    // 4. ESTRATÉGIA 2: Tentar criar WABA (5 tentativas)
-    console.log('🎯 Passo 4: Tentando criar WABA automaticamente...');
+    // 3. ESTRATÉGIA 2: Criar WABA via BSP
+    console.log('🎯 Passo 3: Criando WABA via BSP...');
     
-    const bspToken = BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN;
-    if (!bspToken) {
-      throw new Error('Token BSP não configurado');
+    if (!existingWABA.business_id) {
+      throw new Error('Business ID não encontrado para criação');
     }
 
-    let wabaResult = null;
-    const strategies = [
-      { name: 'client_whatsapp_applications', fn: WhatsAppIntegrationService.createViaClientWhatsApp },
-      { name: 'whatsapp_business_accounts', fn: WhatsAppIntegrationService.createViaDirectWABA },
-      { name: 'applications', fn: WhatsAppIntegrationService.createViaApplications },
-      { name: 'official_flow', fn: WhatsAppIntegrationService.createViaOfficialFlow },
-      { name: 'global_endpoint', fn: WhatsAppIntegrationService.createViaGlobalEndpoint }
-    ];
-
-    // Tentar cada estratégia
-    for (const strategy of strategies) {
-      try {
-        console.log(`🎯 Tentando estratégia: ${strategy.name}`);
-        
-        wabaResult = await strategy.fn(businessId, bspToken, 'system_user', restaurant_id);
-        
-        if (wabaResult.success && wabaResult.waba_id) {
-          console.log(`🎯 ✅ Estratégia ${strategy.name} sucesso:`, wabaResult.waba_id);
-          
-          // Executar polling e finalizar
-          const finalResult = await WhatsAppIntegrationService.pollAndFinalize(
-            wabaResult, 
-            tokenResult.data, 
-            restaurant_id,
-            strategy.name
-          );
-          
-          return res.json({
-            success: true,
-            message: `Integração concluída via estratégia ${strategy.name}`,
-            data: {
-              waba_id: wabaResult.waba_id,
-              strategy: strategy.name,
-              status: 'completed',
-              integration_id: finalResult.integration_id
-            }
-          });
+    const wabaResult = await WhatsAppIntegrationService.createWABAViaBSP(
+      existingWABA.business_id,
+      restaurant_id
+    );
+    
+    if (wabaResult.success && wabaResult.waba_id) {
+      console.log('🎯 ✅ WABA criada via BSP:', wabaResult.waba_id);
+      
+      // Executar polling e finalizar
+      const finalResult = await WhatsAppIntegrationService.pollAndFinalize(
+        wabaResult, 
+        tokenResult.data, 
+        restaurant_id,
+        'bsp_client_whatsapp_business_accounts'
+      );
+      
+      return res.json({
+        success: true,
+        message: 'Integração concluída via BSP',
+        data: {
+          waba_id: wabaResult.waba_id,
+          strategy: 'bsp_client_whatsapp_business_accounts',
+          status: 'completed',
+          integration_id: finalResult.integration_id
         }
-      } catch (error: any) {
-        console.log(`🎯 ❌ Estratégia ${strategy.name} falhou:`, error.message);
-        await WhatsAppIntegrationService.logStrategyFailure(strategy.name, error, restaurant_id);
-        continue;
-      }
+      });
     }
 
-    // 5. Se todas falharam, marcar como awaiting_waba_creation
-    console.log('🎯 ❌ Todas as estratégias falharam');
+    // 4. Se falhou, retornar erro
+    console.log('🎯 ❌ Falha na criação via BSP');
     
     return res.json({
       success: false,
-      message: 'Todas as estratégias de criação falharam',
+      message: 'Falha na criação de WABA via BSP',
       data: {
-        status: 'awaiting_waba_creation',
-        business_id: businessId,
-        next_step: 'manual_creation',
-        message: 'Complete a criação manualmente no Facebook Business Manager',
-        retry_after: 300 // 5 minutos
+        status: 'creation_failed',
+        business_id: existingWABA.business_id,
+        next_step: 'check_app_capabilities',
+        message: 'Verifique se o App tem capability BSP habilitada'
       }
     });
 

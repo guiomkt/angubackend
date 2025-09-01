@@ -14,12 +14,15 @@ export const META_CONFIG = {
   // Constantes específicas
   PHONE_REGISTRATION_PIN: '152563',
   
-  // Escopos OAuth para WhatsApp Business (usuário final)
+  // Escopos OAuth CORRETOS para WhatsApp Business (usuário final)
+  // business_management: Necessário para acessar Business Manager
+  // whatsapp_business_management: Necessário para gerenciar WABA
   OAUTH_SCOPES: [
-    'whatsapp_business_management',
-    'whatsapp_business_messaging',
-    'pages_show_list',
-    'pages_read_engagement'
+    'business_management',           // ✅ CORRIGIDO: Necessário para /me/businesses
+    'whatsapp_business_management',  // ✅ CORRIGIDO: Necessário para WABA
+    'whatsapp_business_messaging',   // Para enviar mensagens
+    'pages_show_list',              // Para listar páginas
+    'pages_read_engagement'         // Para ler dados das páginas
   ].join(',')
 } as const;
 
