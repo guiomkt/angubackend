@@ -17,7 +17,7 @@ async function subscribeAppToWABA(wabaId: string, token: string) {
         'Content-Type': 'application/json'
       }
     });
-    
+    //passando por cima
     const data = await response.json();
     if (!response.ok) {
       // Se já está inscrito, isso é ok
