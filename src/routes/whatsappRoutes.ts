@@ -3002,4 +3002,581 @@ async function upsertContact(restaurant_id: string, phone_number: string, contac
   }
 }
 
-export default router; 
+// ============================================================================
+// NOVOS ENDPOINTS PARA FLUXO COMPLETO DE INTEGRAÇÃO WHATSAPP BUSINESS CLOUD API
+// ============================================================================
+
+/**
+ * @swagger
+ * /api/whatsapp/auth/exchange-token:
+ *   post:
+ *     summary: Troca authorization code por user access token
+ *     tags: [WhatsApp Integration]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, state]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: Authorization code do Facebook
+ *               state:
+ *                 type: string
+ *                 description: State parameter para validação
+ *               restaurant_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: Token trocado com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.post('/auth/exchange-token', async (req: Request, res: Response) => {
+  try {
+    const { code, state, restaurant_id } = req.body;
+
+    if (!code || !state || !restaurant_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code, state e restaurant_id são obrigatórios'
+      });
+    }
+
+    console.log('🔄 Iniciando troca de token...');
+
+    const tokenResult = await WhatsAppIntegrationService.exchangeCodeForToken(
+      code, 
+      state, 
+      restaurant_id
+    );
+
+    if (!tokenResult.success) {
+      return res.status(400).json({
+        success: false,
+        message: tokenResult.message,
+        error: tokenResult.error
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Token trocado com sucesso',
+      data: tokenResult.data
+    });
+
+  } catch (error: any) {
+    console.error('🔄 ❌ Erro na troca de token:', error.response?.data || error.message);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno na troca de token',
+      error: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/waba/discover-or-create:
+ *   post:
+ *     summary: Descobre WABA existente ou inicia processo de criação
+ *     tags: [WhatsApp Integration]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [access_token, restaurant_id]
+ *             properties:
+ *               access_token:
+ *                 type: string
+ *                 description: User access token do Facebook
+ *               restaurant_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: WABA encontrada ou processo iniciado
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.post('/waba/discover-or-create', async (req: Request, res: Response) => {
+  try {
+    const { access_token, restaurant_id } = req.body;
+
+    if (!access_token || !restaurant_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Access token e restaurant_id são obrigatórios'
+      });
+    }
+
+    console.log('🔍 Iniciando descoberta de WABA...');
+
+    // Descobrir business_id
+    const businessId = await WhatsAppIntegrationService.discoverBusinessId(access_token);
+    if (!businessId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID não encontrado para o usuário'
+      });
+    }
+
+    // ESTRATÉGIA 1: Buscar WABA existente
+    const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(
+      businessId, 
+      access_token, 
+      restaurant_id
+    );
+
+    if (existingWABA.found && existingWABA.waba_id) {
+      console.log('🔍 ✅ WABA existente encontrada:', existingWABA.waba_id);
+      
+      return res.json({
+        success: true,
+        message: 'WABA existente encontrada',
+        data: {
+          waba_id: existingWABA.waba_id,
+          strategy: existingWABA.strategy,
+          status: 'found',
+          business_id: businessId
+        }
+      });
+    }
+
+    // Se não encontrou, retornar status para criação
+    return res.json({
+      success: true,
+      message: 'WABA não encontrada, iniciando processo de criação',
+      data: {
+        status: 'not_found',
+        business_id: businessId,
+        next_step: 'create_strategies'
+      }
+    });
+
+  } catch (error: any) {
+    console.error('�� ❌ Erro na descoberta de WABA:', error.response?.data || error.message);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno na descoberta de WABA',
+      error: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/waba/create-strategies:
+ *   post:
+ *     summary: Executa todas as 5 estratégias de criação de WABA
+ *     tags: [WhatsApp Integration]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [business_id, access_token, restaurant_id]
+ *             properties:
+ *               business_id:
+ *                 type: string
+ *                 description: Business ID do Facebook
+ *               access_token:
+ *                 type: string
+ *                 description: User access token do Facebook
+ *               restaurant_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: WABA criada com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.post('/waba/create-strategies', async (req: Request, res: Response) => {
+  try {
+    const { business_id, access_token, restaurant_id } = req.body;
+
+    if (!business_id || !access_token || !restaurant_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID, access token e restaurant_id são obrigatórios'
+      });
+    }
+
+    console.log('🚀 Iniciando criação de WABA com múltiplas estratégias...');
+
+    // Verificar se temos token BSP
+    const bspToken = BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN;
+    if (!bspToken) {
+      console.error('🚀 ❌ Token BSP não configurado');
+      return res.status(500).json({
+        success: false,
+        message: 'Configuração BSP incompleta - token não encontrado'
+      });
+    }
+
+    // Definir estratégias em ordem de prioridade
+    const strategies = [
+      { 
+        name: 'client_whatsapp_applications', 
+        fn: WhatsAppIntegrationService.createViaClientWhatsApp 
+      },
+      { 
+        name: 'whatsapp_business_accounts', 
+        fn: WhatsAppIntegrationService.createViaDirectWABA 
+      },
+      { 
+        name: 'applications', 
+        fn: WhatsAppIntegrationService.createViaApplications 
+      },
+      { 
+        name: 'official_flow', 
+        fn: WhatsAppIntegrationService.createViaOfficialFlow 
+      },
+      { 
+        name: 'global_endpoint', 
+        fn: WhatsAppIntegrationService.createViaGlobalEndpoint 
+      }
+    ];
+
+    // Tentar cada estratégia
+    for (const strategy of strategies) {
+      try {
+        console.log(`🚀 Tentando estratégia: ${strategy.name}`);
+        
+        const result = await strategy.fn(business_id, bspToken, 'system_user', restaurant_id);
+        
+        if (result.success && result.waba_id) {
+          console.log(`🚀 ✅ Estratégia ${strategy.name} sucesso:`, result.waba_id);
+          
+          return res.json({
+            success: true,
+            message: `WABA criada com sucesso via estratégia ${strategy.name}`,
+            data: {
+              waba_id: result.waba_id,
+              strategy: strategy.name,
+              next_step: 'polling_verification'
+            }
+          });
+        }
+      } catch (error: any) {
+        console.log(`🚀 ❌ Estratégia ${strategy.name} falhou:`, error.message);
+        await WhatsAppIntegrationService.logStrategyFailure(strategy.name, error, restaurant_id);
+        continue;
+      }
+    }
+
+    // Se todas falharam
+    console.log('�� ❌ Todas as estratégias falharam');
+    
+    return res.json({
+      success: false,
+      message: 'Todas as estratégias de criação falharam',
+      data: {
+        status: 'all_strategies_failed',
+        strategies_tried: strategies.map(s => s.name),
+        next_step: 'manual_creation',
+        message: 'Complete a criação manualmente no Facebook Business Manager'
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🚀 ❌ Erro nas estratégias de criação:', error.response?.data || error.message);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno nas estratégias de criação',
+      error: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/waba/polling-system:
+ *   post:
+ *     summary: Sistema de polling para verificar criação de WABA
+ *     tags: [WhatsApp Integration]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [business_id, access_token, restaurant_id]
+ *             properties:
+ *               business_id:
+ *                 type: string
+ *                 description: Business ID do Facebook
+ *               access_token:
+ *                 type: string
+ *                 description: User access token do Facebook
+ *               restaurant_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *               max_attempts:
+ *                 type: integer
+ *                 default: 10
+ *                 description: Número máximo de tentativas
+ *     responses:
+ *       200:
+ *         description: Polling concluído
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.post('/waba/polling-system', async (req: Request, res: Response) => {
+  try {
+    const { business_id, access_token, restaurant_id, max_attempts = 10 } = req.body;
+
+    if (!business_id || !access_token || !restaurant_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID, access token e restaurant_id são obrigatórios'
+      });
+    }
+
+    console.log('⏳ Iniciando sistema de polling...');
+
+    const pollingResult = await WhatsAppIntegrationService.pollForWABA(
+      business_id, 
+      access_token, 
+      restaurant_id,
+      max_attempts
+    );
+
+    if (pollingResult.found && pollingResult.waba_id) {
+      return res.json({
+        success: true,
+        message: 'WABA encontrada via polling',
+        data: {
+          waba_id: pollingResult.waba_id,
+          attempts: pollingResult.attempts,
+          status: 'found',
+          next_step: 'finalize_integration'
+        }
+      });
+    }
+
+    return res.json({
+      success: false,
+      message: 'WABA não encontrada após polling',
+      data: {
+        attempts: pollingResult.attempts,
+        status: 'not_found',
+        next_step: 'retry_later',
+        retry_after: 300 // 5 minutos
+      }
+    });
+
+  } catch (error: any) {
+    console.error('⏳ ❌ Erro no sistema de polling:', error.response?.data || error.message);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno no sistema de polling',
+      error: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/whatsapp/waba/complete-flow:
+ *   post:
+ *     summary: Fluxo principal que orquestra todo o processo de integração
+ *     tags: [WhatsApp Integration]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [code, state, restaurant_id]
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: Authorization code do Facebook
+ *               state:
+ *                 type: string
+ *                 description: State parameter para validação
+ *               restaurant_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID do restaurante
+ *     responses:
+ *       200:
+ *         description: Integração concluída com sucesso
+ *       400:
+ *         description: Dados inválidos
+ *       500:
+ *         description: Erro interno
+ */
+router.post('/waba/complete-flow', async (req: Request, res: Response) => {
+  try {
+    const { code, state, restaurant_id } = req.body;
+
+    if (!code || !state || !restaurant_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code, state e restaurant_id são obrigatórios'
+      });
+    }
+
+    console.log('🎯 Iniciando fluxo completo de integração...');
+
+    // 1. Trocar code por token
+    console.log('🎯 Passo 1: Trocando code por access token...');
+    const tokenResult = await WhatsAppIntegrationService.exchangeCodeForToken(
+      code, 
+      state, 
+      restaurant_id
+    );
+
+    if (!tokenResult.success || !tokenResult.data) {
+      return res.status(400).json({
+        success: false,
+        message: 'Falha na troca de token',
+        error: tokenResult.error
+      });
+    }
+
+    // 2. Descobrir business_id
+    console.log('🎯 Passo 2: Descobrindo business_id...');
+    const businessId = await WhatsAppIntegrationService.discoverBusinessId(tokenResult.data.access_token);
+    if (!businessId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID não encontrado para o usuário'
+      });
+    }
+
+    // 3. ESTRATÉGIA 1: Buscar WABA existente
+    console.log('🎯 Passo 3: Buscando WABA existente...');
+    const existingWABA = await WhatsAppIntegrationService.discoverExistingWABA(
+      businessId, 
+      tokenResult.data.access_token, 
+      restaurant_id
+    );
+    
+    if (existingWABA.found && existingWABA.waba_id) {
+      console.log('🎯 ✅ WABA existente encontrada:', existingWABA.waba_id);
+      
+      // Finalizar integração
+      const finalResult = await WhatsAppIntegrationService.finalizeIntegration(
+        existingWABA.waba_id, 
+        tokenResult.data, 
+        restaurant_id
+      );
+      
+      return res.json({
+        success: true,
+        message: 'Integração concluída com WABA existente',
+        data: {
+          waba_id: existingWABA.waba_id,
+          strategy: 'existing_waba',
+          status: 'completed',
+          integration_id: finalResult.integration_id
+        }
+      });
+    }
+
+    // 4. ESTRATÉGIA 2: Tentar criar WABA (5 tentativas)
+    console.log('🎯 Passo 4: Tentando criar WABA automaticamente...');
+    
+    const bspToken = BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN;
+    if (!bspToken) {
+      throw new Error('Token BSP não configurado');
+    }
+
+    let wabaResult = null;
+    const strategies = [
+      { name: 'client_whatsapp_applications', fn: WhatsAppIntegrationService.createViaClientWhatsApp },
+      { name: 'whatsapp_business_accounts', fn: WhatsAppIntegrationService.createViaDirectWABA },
+      { name: 'applications', fn: WhatsAppIntegrationService.createViaApplications },
+      { name: 'official_flow', fn: WhatsAppIntegrationService.createViaOfficialFlow },
+      { name: 'global_endpoint', fn: WhatsAppIntegrationService.createViaGlobalEndpoint }
+    ];
+
+    // Tentar cada estratégia
+    for (const strategy of strategies) {
+      try {
+        console.log(`🎯 Tentando estratégia: ${strategy.name}`);
+        
+        wabaResult = await strategy.fn(businessId, bspToken, 'system_user', restaurant_id);
+        
+        if (wabaResult.success && wabaResult.waba_id) {
+          console.log(`🎯 ✅ Estratégia ${strategy.name} sucesso:`, wabaResult.waba_id);
+          
+          // Executar polling e finalizar
+          const finalResult = await WhatsAppIntegrationService.pollAndFinalize(
+            wabaResult, 
+            tokenResult.data, 
+            restaurant_id,
+            strategy.name
+          );
+          
+          return res.json({
+            success: true,
+            message: `Integração concluída via estratégia ${strategy.name}`,
+            data: {
+              waba_id: wabaResult.waba_id,
+              strategy: strategy.name,
+              status: 'completed',
+              integration_id: finalResult.integration_id
+            }
+          });
+        }
+      } catch (error: any) {
+        console.log(`🎯 ❌ Estratégia ${strategy.name} falhou:`, error.message);
+        await WhatsAppIntegrationService.logStrategyFailure(strategy.name, error, restaurant_id);
+        continue;
+      }
+    }
+
+    // 5. Se todas falharam, marcar como awaiting_waba_creation
+    console.log('🎯 ❌ Todas as estratégias falharam');
+    
+    return res.json({
+      success: false,
+      message: 'Todas as estratégias de criação falharam',
+      data: {
+        status: 'awaiting_waba_creation',
+        business_id: businessId,
+        next_step: 'manual_creation',
+        message: 'Complete a criação manualmente no Facebook Business Manager',
+        retry_after: 300 // 5 minutos
+      }
+    });
+
+  } catch (error: any) {
+    console.error('🎯 ❌ Erro no fluxo completo:', error.response?.data || error.message);
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno no fluxo completo',
+      error: error.response?.data?.error?.message || error.message
+    });
+  }
+});
+
+export default router;

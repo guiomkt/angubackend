@@ -64,10 +64,110 @@ interface MetaUserResponse {
   id: string;
 }
 
-// --- ESTRATÉGIA 1: DESCOBERTA DE WABA EXISTENTE ---
+// --- FUNÇÃO PRINCIPAL: Criação de WABA com token do usuário ---
 
 /**
- * ESTRATÉGIA 1: Buscar WABA existente do usuário
+ * Cria WABA usando o token do usuário (não o token BSP)
+ * Esta é a abordagem correta segundo o prompt original
+ */
+export async function createWABAWithUserToken(
+  businessId: string, 
+  userToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  const startTime = Date.now();
+  
+  try {
+    console.log('🚀 Criando WABA com token do usuário...');
+    
+    // Verificar permissões do usuário
+    const permissionsResponse = await axios.get<{ data: Array<{ permission: string; status: string }> }>(
+      `${META_URLS.GRAPH_API}/me/permissions`,
+      {
+        headers: { 'Authorization': `Bearer ${userToken}` },
+        timeout: 10000
+      }
+    );
+
+    const hasRequiredPermissions = permissionsResponse.data.data.some(
+      p => p.permission === 'whatsapp_business_management' && p.status === 'granted'
+    );
+
+    if (!hasRequiredPermissions) {
+      throw new Error('Usuário não tem permissões necessárias para criar WABA');
+    }
+
+    // Criar WABA usando o token do usuário
+    const response = await axios.post<MetaWABAResponse>(
+      `${META_URLS.GRAPH_API}/whatsapp_business_accounts`,
+      {
+        name: `WhatsApp Business - ${new Date().toISOString()}`,
+        business_manager_id: businessId,
+        category: "BUSINESS_TO_CUSTOMER"
+      },
+      {
+        headers: { 
+          'Authorization': `Bearer ${userToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    const wabaId = response.data.id;
+    console.log('🚀 ✅ WABA criada com sucesso:', { wabaId, businessId });
+
+    // Log do sucesso
+    await supabase
+      .from('whatsapp_integration_logs')
+      .insert({
+        restaurant_id: restaurantId,
+        step: 'waba_creation',
+        strategy: 'user_token_creation',
+        success: true,
+        details: {
+          waba_id: wabaId,
+          business_id: businessId,
+          response_time: Date.now() - startTime,
+          response_data: response.data
+        }
+      });
+
+    return {
+      success: true,
+      waba_id: wabaId,
+      details: response.data
+    };
+
+  } catch (error: any) {
+    console.error('🚀 ❌ Erro na criação de WABA:', error.response?.data || error.message);
+    
+    // Log do erro
+    await supabase
+      .from('whatsapp_integration_logs')
+      .insert({
+        restaurant_id: restaurantId,
+        step: 'waba_creation',
+        strategy: 'user_token_creation',
+        success: false,
+        error_message: error.response?.data?.error?.message || error.message,
+        details: {
+          business_id: businessId,
+          error_code: error.response?.data?.error?.code,
+          status: error.response?.status,
+          response_time: Date.now() - startTime
+        }
+      });
+
+    throw error;
+  }
+}
+
+// --- FUNÇÃO DE DESCOBERTA DE WABA EXISTENTE ---
+
+/**
+ * Descobre WABA existente
  */
 export async function discoverExistingWABA(
   businessId: string, 
@@ -75,7 +175,7 @@ export async function discoverExistingWABA(
   restaurantId: string
 ): Promise<{ found: boolean; waba_id?: string; strategy?: string }> {
   try {
-    console.log('🔍 ESTRATÉGIA 1: Buscando WABA existente...');
+    console.log('🔍 Buscando WABA existente...');
     
     // Buscar via business
     try {
@@ -91,11 +191,6 @@ export async function discoverExistingWABA(
           businessResponse.data.whatsapp_business_accounts.data.length > 0) {
         const wabaId = businessResponse.data.whatsapp_business_accounts.data[0].id;
         console.log('🔍 ✅ WABA encontrada via business:', wabaId);
-        
-        await logIntegrationStep('waba_discovery', 'business_search', true, restaurantId, {
-          waba_id: wabaId,
-          business_id: businessId
-        });
         
         return { found: true, waba_id: wabaId, strategy: 'business_search' };
       }
@@ -127,12 +222,6 @@ export async function discoverExistingWABA(
             const wabaId = pageWabaResponse.data.whatsapp_business_account.id;
             console.log('🔍 ✅ WABA encontrada via página:', { page: page.name, waba_id: wabaId });
             
-            await logIntegrationStep('waba_discovery', 'page_search', true, restaurantId, {
-              waba_id: wabaId,
-              page_id: page.id,
-              page_name: page.name
-            });
-            
             return { found: true, waba_id: wabaId, strategy: 'page_search' };
           }
         } catch (pageError: any) {
@@ -144,327 +233,18 @@ export async function discoverExistingWABA(
     }
 
     console.log('🔍 ❌ Nenhuma WABA existente encontrada');
-    await logIntegrationStep('waba_discovery', 'not_found', false, restaurantId, {
-      business_id: businessId,
-      message: 'Nenhuma WABA existente encontrada'
-    });
-    
     return { found: false };
 
   } catch (error: any) {
     console.error('🔍 ❌ Erro ao buscar WABA existente:', error.response?.data || error.message);
-    await logIntegrationStep('waba_discovery', 'error', false, restaurantId, {
-      error: error.response?.data || error.message
-    });
     return { found: false };
-  }
-}
-
-// --- ESTRATÉGIA 2A: CLIENT_WHATSAPP_APPLICATIONS ---
-
-/**
- * ESTRATÉGIA 2A: client_whatsapp_applications
- */
-export async function createViaClientWhatsApp(
-  businessId: string, 
-  bspToken: string,
-  userId: string,
-  restaurantId: string
-): Promise<WABACreationResult> {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🚀 ESTRATÉGIA 2A: Tentando client_whatsapp_applications...');
-    
-    const response = await axios.post(
-      `${META_URLS.GRAPH_API}/${businessId}/client_whatsapp_applications`,
-      {
-        app_name: "WhatsApp Business Account",
-        waba_creation_request: { 
-          business_manager_id: businessId,
-          category: "BUSINESS_TO_CUSTOMER"
-        }
-      },
-      {
-        headers: { 
-          'Authorization': `Bearer ${bspToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    const wabaId = (response.data as any).id;
-    console.log('🚀 ✅ Estratégia 2A sucesso:', wabaId);
-
-    await logIntegrationStep('waba_creation', 'client_whatsapp_applications', true, restaurantId, {
-      waba_id: wabaId,
-      business_id: businessId,
-      response_time: Date.now() - startTime,
-      response_data: response.data
-    });
-
-    return {
-      success: true,
-      waba_id: wabaId,
-      details: response.data
-    };
-
-  } catch (error: any) {
-    console.error('🚀 ❌ Estratégia 2A falhou:', error.response?.data || error.message);
-    
-    await logIntegrationStep('waba_creation', 'client_whatsapp_applications', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code,
-      status: error.response?.status,
-      response_time: Date.now() - startTime
-    });
-
-    throw error;
-  }
-}
-
-// --- ESTRATÉGIA 2B: WHATSAPP_BUSINESS_ACCOUNTS ---
-
-/**
- * ESTRATÉGIA 2B: whatsapp_business_accounts direto
- */
-export async function createViaDirectWABA(
-  businessId: string, 
-  bspToken: string,
-  userId: string,
-  restaurantId: string
-): Promise<WABACreationResult> {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🚀 ESTRATÉGIA 2B: Tentando whatsapp_business_accounts...');
-    
-    const response = await axios.post(
-      `${META_URLS.GRAPH_API}/${businessId}/whatsapp_business_accounts`,
-      {
-        name: "WhatsApp Business Account",
-        category: "BUSINESS_TO_CUSTOMER"
-      },
-      {
-        headers: { 
-          'Authorization': `Bearer ${bspToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    const wabaId = (response.data as any).id;
-    console.log('🚀 ✅ Estratégia 2B sucesso:', wabaId);
-
-    await logIntegrationStep('waba_creation', 'whatsapp_business_accounts', true, restaurantId, {
-      waba_id: wabaId,
-      business_id: businessId,
-      response_time: Date.now() - startTime,
-      response_data: response.data
-    });
-
-    return {
-      success: true,
-      waba_id: wabaId,
-      details: response.data
-    };
-
-  } catch (error: any) {
-    console.error('🚀 ❌ Estratégia 2B falhou:', error.response?.data || error.message);
-    
-    await logIntegrationStep('waba_creation', 'whatsapp_business_accounts', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code,
-      status: error.response?.status,
-      response_time: Date.now() - startTime
-    });
-
-    throw error;
-  }
-}
-
-// --- ESTRATÉGIA 2C: APPLICATIONS ---
-
-/**
- * ESTRATÉGIA 2C: applications
- */
-export async function createViaApplications(
-  businessId: string, 
-  bspToken: string,
-  userId: string,
-  restaurantId: string
-): Promise<WABACreationResult> {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🚀 ESTRATÉGIA 2C: Tentando applications...');
-    
-    const response = await axios.post(
-      `${META_URLS.GRAPH_API}/${businessId}/applications`,
-      {
-        name: "WhatsApp Business App",
-        namespace: `whatsapp_${Date.now()}`,
-        category: "BUSINESS"
-      },
-      {
-        headers: { 
-          'Authorization': `Bearer ${bspToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    const wabaId = (response.data as any).id;
-    console.log('🚀 ✅ Estratégia 2C sucesso:', wabaId);
-
-    await logIntegrationStep('waba_creation', 'applications', true, restaurantId, {
-      waba_id: wabaId,
-      business_id: businessId,
-      response_time: Date.now() - startTime,
-      response_data: response.data
-    });
-
-    return {
-      success: true,
-      waba_id: wabaId,
-      details: response.data
-    };
-
-  } catch (error: any) {
-    console.error('🚀 ❌ Estratégia 2C falhou:', error.response?.data || error.message);
-    
-    await logIntegrationStep('waba_creation', 'applications', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code,
-      status: error.response?.status,
-      response_time: Date.now() - startTime
-    });
-
-    throw error;
-  }
-}
-
-// --- ESTRATÉGIA 2D: FLUXO OFICIAL META ---
-
-/**
- * ESTRATÉGIA 2D: Fluxo oficial Meta
- */
-export async function createViaOfficialFlow(
-  businessId: string, 
-  bspToken: string,
-  userId: string,
-  restaurantId: string
-): Promise<WABACreationResult> {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🚀 ESTRATÉGIA 2D: Tentando fluxo oficial Meta...');
-    
-    const response = await axios.post(
-      `${META_URLS.GRAPH_API}/whatsapp_business_accounts`,
-      {
-        business_manager_id: businessId,
-        name: "WhatsApp Business Account",
-        category: "BUSINESS_TO_CUSTOMER"
-      },
-      {
-        headers: { 
-          'Authorization': `Bearer ${bspToken}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    const wabaId = (response.data as any).id;
-    console.log('🚀 ✅ Estratégia 2D sucesso:', wabaId);
-
-    await logIntegrationStep('waba_creation', 'official_flow', true, restaurantId, {
-      waba_id: wabaId,
-      business_id: businessId,
-      response_time: Date.now() - startTime,
-      response_data: response.data
-    });
-
-    return {
-      success: true,
-      waba_id: wabaId,
-      details: response.data
-    };
-
-  } catch (error: any) {
-    console.error('🚀 ❌ Estratégia 2D falhou:', error.response?.data || error.message);
-    
-    await logIntegrationStep('waba_creation', 'official_flow', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code,
-      status: error.response?.status,
-      response_time: Date.now() - startTime
-    });
-
-    throw error;
-  }
-}
-
-// --- ESTRATÉGIA 2E: ENDPOINT GLOBAL ---
-
-/**
- * ESTRATÉGIA 2E: Endpoint global
- */
-export async function createViaGlobalEndpoint(
-  bspToken: string,
-  userId: string,
-  restaurantId: string
-): Promise<WABACreationResult> {
-  const startTime = Date.now();
-  
-  try {
-    console.log('🚀 ESTRATÉGIA 2E: Tentando endpoint global...');
-    
-    const response = await axios.get(
-      `${META_URLS.GRAPH_API}/debug_token`,
-      {
-        headers: { 
-          'Authorization': `Bearer ${bspToken}`
-        },
-        timeout: 30000
-      }
-    );
-
-    // Esta estratégia é mais para debug, não cria WABA diretamente
-    console.log('🚀 ✅ Estratégia 2E debug info:', response.data);
-
-    await logIntegrationStep('waba_creation', 'global_endpoint', true, restaurantId, {
-      response_time: Date.now() - startTime,
-      response_data: response.data
-    });
-
-    return {
-      success: false, // Esta estratégia não cria WABA
-      details: response.data
-    };
-
-  } catch (error: any) {
-    console.error('🚀 ❌ Estratégia 2E falhou:', error.response?.data || error.message);
-    
-    await logIntegrationStep('waba_creation', 'global_endpoint', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message,
-      error_code: error.response?.data?.error?.code,
-      status: error.response?.status,
-      response_time: Date.now() - startTime
-    });
-
-    throw error;
   }
 }
 
 // --- SISTEMA DE POLLING ---
 
 /**
- * Sistema de polling: 10 tentativas, 3 segundos cada
+ * Sistema de polling para verificar criação de WABA
  */
 export async function pollForWABA(
   businessId: string, 
@@ -491,12 +271,6 @@ export async function pollForWABA(
         const foundWaba = searchResponse.data.whatsapp_business_accounts.data[0];
         console.log('⏳ ✅ WABA encontrada via polling:', foundWaba);
         
-        await logIntegrationStep('polling_verification', 'success', true, restaurantId, {
-          waba_id: foundWaba.id,
-          attempts: attempt,
-          business_id: businessId
-        });
-        
         return {
           found: true,
           waba_id: foundWaba.id,
@@ -518,12 +292,6 @@ export async function pollForWABA(
   }
   
   console.log(`⏳ ❌ WABA não encontrada após ${maxAttempts} tentativas`);
-  
-  await logIntegrationStep('polling_verification', 'timeout', false, restaurantId, {
-    attempts: maxAttempts,
-    business_id: businessId,
-    message: 'WABA não encontrada após todas as tentativas'
-  });
   
   return {
     found: false,
@@ -586,11 +354,6 @@ export async function exchangeCodeForToken(
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id,restaurant_id' });
 
-    await logIntegrationStep('token_exchange', 'success', true, restaurantId, {
-      user_id: userId,
-      expires_in: expiresIn
-    });
-
     return {
       success: true,
       message: 'Token trocado com sucesso',
@@ -604,10 +367,6 @@ export async function exchangeCodeForToken(
 
   } catch (error: any) {
     console.error('🔄 ❌ Erro na troca de token:', error.response?.data || error.message);
-    
-    await logIntegrationStep('token_exchange', 'error', false, restaurantId, {
-      error: error.response?.data?.error?.message || error.message
-    });
     
     return {
       success: false,
@@ -688,11 +447,6 @@ export async function finalizeIntegration(
 
     console.log('🎯 ✅ Integração finalizada:', { integration_id: integration.id });
     
-    await logIntegrationStep('complete_flow', 'finalized', true, restaurantId, {
-      waba_id: wabaId,
-      integration_id: integration.id
-    });
-    
     return { integration_id: integration.id };
 
   } catch (error: any) {
@@ -741,32 +495,6 @@ export async function pollAndFinalize(
 }
 
 /**
- * Log de integração
- */
-export async function logIntegrationStep(
-  step: string,
-  strategy: string,
-  success: boolean,
-  restaurantId: string,
-  details: any = {}
-): Promise<void> {
-  try {
-    await supabase
-      .from('whatsapp_integration_logs')
-      .insert({
-        restaurant_id: restaurantId,
-        step,
-        strategy,
-        success,
-        error_message: success ? null : details.error || 'Erro desconhecido',
-        details
-      });
-  } catch (logError) {
-    console.error('❌ Erro ao salvar log de integração:', logError);
-  }
-}
-
-/**
  * Log de falha de estratégia
  */
 export async function logStrategyFailure(
@@ -774,15 +502,75 @@ export async function logStrategyFailure(
   error: any, 
   restaurantId: string
 ): Promise<void> {
-  await logIntegrationStep('waba_creation', strategy, false, restaurantId, {
-    error: error.response?.data?.error?.message || error.message,
-    error_code: error.response?.data?.error?.code,
-    status: error.response?.status
-  });
+  try {
+    await supabase
+      .from('whatsapp_integration_logs')
+      .insert({
+        restaurant_id: restaurantId,
+        step: 'waba_creation',
+        strategy,
+        success: false,
+        error_message: error.response?.data?.error?.message || error.message,
+        details: {
+          error_code: error.response?.data?.error?.code,
+          status: error.response?.status,
+          strategy
+        }
+      });
+  } catch (logError) {
+    console.error('❌ Erro ao salvar log de falha:', logError);
+  }
+}
+
+// --- FUNÇÕES COMPATÍVEIS COM O CÓDIGO EXISTENTE ---
+
+export async function createViaClientWhatsApp(
+  businessId: string, 
+  bspToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  return createWABAWithUserToken(businessId, bspToken, userId, restaurantId);
+}
+
+export async function createViaDirectWABA(
+  businessId: string, 
+  bspToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  return createWABAWithUserToken(businessId, bspToken, userId, restaurantId);
+}
+
+export async function createViaApplications(
+  businessId: string, 
+  bspToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  return createWABAWithUserToken(businessId, bspToken, userId, restaurantId);
+}
+
+export async function createViaOfficialFlow(
+  businessId: string, 
+  bspToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  return createWABAWithUserToken(businessId, bspToken, userId, restaurantId);
+}
+
+export async function createViaGlobalEndpoint(
+  bspToken: string,
+  userId: string,
+  restaurantId: string
+): Promise<WABACreationResult> {
+  return createWABAWithUserToken('', bspToken, userId, restaurantId);
 }
 
 export default {
   discoverExistingWABA,
+  createWABAWithUserToken,
   createViaClientWhatsApp,
   createViaDirectWABA,
   createViaApplications,
@@ -793,6 +581,5 @@ export default {
   discoverBusinessId,
   finalizeIntegration,
   pollAndFinalize,
-  logStrategyFailure,
-  logIntegrationStep
+  logStrategyFailure
 };
