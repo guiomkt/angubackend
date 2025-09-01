@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { supabase } from '../config/database';
+import { META_CONFIG, META_URLS } from '../config/meta';
 import WhatsAppIntegrationService, { logIntegrationStep } from '../services/whatsappIntegrationService';
+import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -25,6 +27,52 @@ async function finalizeIntegration(wabaId: string, businessId: string, restauran
   );
   console.log(`[MOCK_FINALIZE] Integração finalizada com sucesso.`);
 }
+
+/**
+ * @swagger
+ * /api/whatsapp/oauth/start:
+ *   get:
+ *     summary: (NOVO) Inicia o fluxo de autorização OAuth para integração com o WhatsApp.
+ *     description: Gera e retorna a URL de autorização da Meta para o usuário iniciar o processo.
+ *     tags: [WhatsApp Integration]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       '200':
+ *         description: "URL de autorização gerada com sucesso."
+ *       '401':
+ *         description: "Não autorizado."
+ *       '500':
+ *         description: "Falha ao gerar a URL."
+ */
+router.get('/oauth/start', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const restaurantId = req.user?.restaurant_id;
+    if (!restaurantId) {
+      return res.status(401).json({ success: false, message: 'Restaurante não identificado para o usuário autenticado.' });
+    }
+
+    const redirectUri = `${process.env.API_BASE_URL}/api/whatsapp/oauth/callback`;
+    const state = restaurantId; // Usamos o restaurant_id como state para identificar no callback
+
+    const params = new URLSearchParams({
+      client_id: process.env.FACEBOOK_APP_ID!,
+      redirect_uri: redirectUri,
+      scope: META_CONFIG.OAUTH_SCOPES,
+      state: state,
+      response_type: 'code',
+    });
+
+    const authUrl = `${META_URLS.OAUTH_DIALOG}?${params.toString()}`;
+
+    console.log(`[OAUTH_START] Gerada URL de autorização para o restaurante: ${restaurantId}`);
+    res.status(200).json({ success: true, data: { authUrl } });
+
+  } catch (error: any) {
+    console.error('[OAUTH_START] Erro ao gerar URL de autorização:', error);
+    res.status(500).json({ success: false, message: 'Erro ao iniciar o fluxo de autorização.', error: error.message });
+  }
+});
 
 /**
  * @swagger
