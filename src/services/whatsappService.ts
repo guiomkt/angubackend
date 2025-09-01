@@ -130,6 +130,12 @@ interface CreateClientWABAResponse {
   status: string;
 }
 
+interface CreateApplicationResponse {
+  id: string;
+  name: string;
+  status: string;
+}
+
 /**
  * Resposta da API da Meta para lista de páginas.
  */
@@ -1394,24 +1400,79 @@ class WhatsAppService {
       console.log('🔍 Business ID:', businessId);
       console.log('🔍 Nome da integração:', `Integration for ${process.env.APP_NAME || 'Angu.ai'}`);
       
-      const createWabaResponse = await axios.post<CreateClientWABAResponse>(
-        `${this.META_GRAPH_URL}/${businessId}/client_whatsapp_applications`,
-        {
-          name: `Integration for ${process.env.APP_NAME || 'Angu.ai'}`
-        },
-        {
-          headers: { 
-            'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
-            'Content-Type': 'application/json'
+      // Endpoint correto para BSP criar WABA para cliente
+      let createWabaResponse: any;
+      
+      try {
+        // Tentativa 1: Endpoint client_whatsapp_applications
+        console.log('🔍 Tentativa 1: Endpoint client_whatsapp_applications...');
+        createWabaResponse = await axios.post<CreateClientWABAResponse | CreateApplicationResponse>(
+          `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/client_whatsapp_applications`,
+          {
+            name: `Integration for ${process.env.APP_NAME || 'Angu.ai'}`,
+            business_id: businessId
+          },
+          {
+            headers: { 
+              'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
           }
+        );
+        console.log('🔍 ✅ WABA criada via client_whatsapp_applications');
+      } catch (error: any) {
+        console.log('🔍 ❌ Endpoint client_whatsapp_applications falhou:', error.response?.data?.error?.message);
+        
+        // Tentativa 2: Endpoint alternativo - criar WABA diretamente
+        console.log('🔍 Tentativa 2: Endpoint alternativo...');
+        try {
+          createWabaResponse = await axios.post(
+            `${this.META_GRAPH_URL}/${businessId}/whatsapp_business_accounts`,
+            {
+              name: `Integration for ${process.env.APP_NAME || 'Angu.ai'}`,
+              access_token: BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN
+            },
+            {
+              headers: { 
+                'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          console.log('🔍 ✅ WABA criada via endpoint alternativo');
+        } catch (altError: any) {
+          console.log('🔍 ❌ Endpoint alternativo também falhou:', altError.response?.data?.error?.message);
+          
+          // Tentativa 3: Usar o endpoint de criação de aplicação
+          console.log('🔍 Tentativa 3: Endpoint de criação de aplicação...');
+          createWabaResponse = await axios.post(
+            `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/applications`,
+            {
+              name: `WhatsApp Business - ${businessName}`,
+              business_id: businessId
+            },
+            {
+              headers: { 
+                'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+          console.log('🔍 ✅ Aplicação criada via endpoint de aplicações');
         }
-      );
+      }
 
       const newWabaId = createWabaResponse.data.id;
       console.log('🔍 ✅ WABA criada automaticamente via BSP:', { 
         wabaId: newWabaId, 
         businessId: businessId,
         businessName: businessName 
+      });
+      
+      // Salvar WABA ID no signup state
+      await this._updateSignupState(userId, restaurantId, {
+        waba_id: newWabaId,
+        status: 'waba_created'
       });
 
       // Aguardar propagação da criação (3 segundos)
