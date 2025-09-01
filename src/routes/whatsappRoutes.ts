@@ -66,11 +66,11 @@ router.get('/oauth/start', authenticateToken, (req: AuthenticatedRequest, res: R
     const authUrl = `${META_URLS.OAUTH_DIALOG}?${params.toString()}`;
 
     console.log(`[OAUTH_START] Gerada URL de autorização para o restaurante: ${restaurantId}`);
-    res.status(200).json({ success: true, data: { authUrl } });
+    return res.status(200).json({ success: true, data: { authUrl } });
 
   } catch (error: any) {
     console.error('[OAUTH_START] Erro ao gerar URL de autorização:', error);
-    res.status(500).json({ success: false, message: 'Erro ao iniciar o fluxo de autorização.', error: error.message });
+    return res.status(500).json({ success: false, message: 'Erro ao iniciar o fluxo de autorização.', error: error.message });
   }
 });
 
