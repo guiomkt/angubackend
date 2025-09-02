@@ -28,7 +28,7 @@ import userRoutes from './routes/userRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import publicMenuRoutes from './routes/publicMenuRoutes';
 import publicRoutes from './routes/publicRoutes';
-import whatsappRoutes from './routes/whatsappRoutes';
+import whatsappV2Routes from './routes/whatsappV2Routes';
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -560,7 +560,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/experience', experienceRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/whatsapp', whatsappV2Routes);
 
 // Public routes (no authentication required)
 app.use('/api/public/menu', publicMenuRoutes);
