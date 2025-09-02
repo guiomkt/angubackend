@@ -336,21 +336,15 @@ export class AuthController {
       }
 
       const result = await AuthService.handleMetaCallback(code as string, state as string);
-      
+
       // Redirecionar baseado no state
       const stateData = JSON.parse(decodeURIComponent(state as string));
       const redirectUrl = stateData.redirectUrl;
-      
+
       if (redirectUrl.includes('localhost') || redirectUrl.includes(process.env.FRONTEND_URL || 'localhost')) {
-        // Frontend local ou de desenvolvimento
-        return res.redirect(`${redirectUrl}?code=${code}&state=${state}`)
+        return res.redirect(`${redirectUrl}?code=${encodeURIComponent('ok')}&state=${state}`)
       } else {
-        // n8n ou outro sistema
-        return res.json({
-          success: true,
-          data: result,
-          message: 'OAuth processado com sucesso'
-        })
+        return res.json({ success: true, data: result, message: 'OAuth processado com sucesso' })
       }
     } catch (error) {
       return next(error);
