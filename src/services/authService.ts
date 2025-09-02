@@ -605,294 +605,80 @@ export class AuthService {
 
   static async handleMetaCallback(code: string, state: string): Promise<any> {
     try {
-      // Decodificar state
       const stateData = JSON.parse(decodeURIComponent(state));
       let { userId, restaurantId } = stateData;
 
-      console.log('🔍 Debug OAuth - State decodificado:', { userId, restaurantId });
-
-      // Validar se userId e restaurantId existem
       if (!userId || !restaurantId) {
         throw new Error('userId e restaurantId são obrigatórios no state');
       }
 
-      // Verificar se o usuário existe na tabela users
-      console.log('🔍 Debug OAuth - Buscando usuário:', userId);
-      const { data: userData, error: userError } = await supabase
+      // Ensure user exists in users table
+      const { data: userData } = await supabase
         .from('users')
         .select('id, user_id, name')
         .eq('id', userId)
         .single();
 
-      console.log('🔍 Debug OAuth - Resultado busca usuário:', { userData, userError });
-
-      if (userError || !userData) {
-        // Tentar buscar por user_id (Supabase Auth ID)
-        console.log('🔍 Debug OAuth - Tentando buscar por user_id:', userId);
-        const { data: userByAuthId, error: userByAuthIdError } = await supabase
+      if (!userData) {
+        const { data: userByAuth } = await supabase
           .from('users')
-          .select('id, user_id, name')
+          .select('id, user_id')
           .eq('user_id', userId)
           .single();
-
-        console.log('🔍 Debug OAuth - Resultado busca por user_id:', { userByAuthId, userByAuthIdError });
-
-        if (userByAuthIdError || !userByAuthId) {
-          // Se não encontrar, criar o usuário na tabela users
-          console.log('🔍 Debug OAuth - Criando usuário na tabela users');
-          
-          // Buscar dados do restaurante para obter informações do usuário
-          const { data: restaurantData, error: restaurantError } = await supabase
-            .from('restaurants')
-            .select('name, email')
-            .eq('id', restaurantId)
-            .single();
-
-          if (restaurantError || !restaurantData) {
-            throw new Error(`Restaurante não encontrado: ${restaurantId}`);
-          }
-
-          // Criar usuário na tabela users
-          const { data: newUser, error: createUserError } = await supabase
-            .from('users')
-            .insert({
-              user_id: userId, // ID do Supabase Auth
-              name: restaurantData.name || 'Usuário WhatsApp',
-              role: 'owner'
-            })
-            .select()
-            .single();
-
-          if (createUserError) {
-            console.error('🔍 Debug OAuth - Erro ao criar usuário:', createUserError);
-            throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
-          }
-
-          console.log('🔍 Debug OAuth - Usuário criado com sucesso:', newUser);
-          userId = newUser.id; // Usar o ID da tabela users
-        } else {
-          // Usar o ID da tabela users
-          userId = userByAuthId.id;
-          console.log('🔍 Debug OAuth - Usando ID da tabela users:', userId);
-        }
+        if (userByAuth) userId = userByAuth.id;
       }
 
-      // Verificar se o restaurante existe
-      console.log('🔍 Debug OAuth - Buscando restaurante:', restaurantId);
-      const { data: restaurantData, error: restaurantError } = await supabase
-        .from('restaurants')
-        .select('id, name')
-        .eq('id', restaurantId)
-        .single();
-
-      console.log('🔍 Debug OAuth - Resultado busca restaurante:', { restaurantData, restaurantError });
-
-      if (restaurantError || !restaurantData) {
-        throw new Error(`Restaurante não encontrado: ${restaurantId}`);
-      }
-
-      // Trocar code por short-lived token
-      const clientId = process.env.FACEBOOK_APP_ID;
-      const clientSecret = process.env.FACEBOOK_APP_SECRET;
-      
-      // IMPORTANTE: O redirect_uri deve ser a URL do backend de produção
+      const clientId = process.env.FACEBOOK_APP_ID!;
+      const clientSecret = process.env.FACEBOOK_APP_SECRET!;
       const isProduction = process.env.NODE_ENV === 'production';
-      const redirectUri = process.env.REDIRECT_URI || 
-        (isProduction 
-          ? 'https://api.angu.ai/api/auth/meta/callback'
-          : `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`
-        );
+      const redirectUri = process.env.REDIRECT_URI || (isProduction
+        ? 'https://api.angu.ai/api/auth/meta/callback'
+        : `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`);
 
+      // Exchange short-lived token
       const tokenResponse = await fetch(META_URLS.OAUTH_ACCESS_TOKEN, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: clientId!,
-          redirect_uri: redirectUri,
-          client_secret: clientSecret!,
-          code: code
-        })
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, client_secret: clientSecret, code })
       });
+      const tokenData = await tokenResponse.json() as any;
+      if (tokenData.error) throw new Error(`Erro ao trocar code por token: ${tokenData.error.message}`);
 
-      const tokenData = await tokenResponse.json() as FacebookTokenResponse;
-
-      if (tokenData.error) {
-        throw new Error(`Erro ao trocar code por token: ${tokenData.error.message}`);
-      }
-
-      // Trocar por long-lived token
-      const longLivedResponse = await fetch(META_URLS.OAUTH_ACCESS_TOKEN, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        }
-      });
-
+      // Exchange for long-lived token
       const longLivedParams = new URLSearchParams({
         grant_type: 'fb_exchange_token',
-        client_id: clientId!,
-        client_secret: clientSecret!,
+        client_id: clientId,
+        client_secret: clientSecret,
         fb_exchange_token: tokenData.access_token
       });
-
-      const longLivedUrl = `${META_URLS.OAUTH_ACCESS_TOKEN}?${longLivedParams.toString()}`;
-      const longLivedData = await fetch(longLivedUrl).then(res => res.json()) as FacebookLongLivedTokenResponse;
-
-      if (longLivedData.error) {
-        throw new Error(`Erro ao trocar por long-lived token: ${longLivedData.error.message}`);
-      }
-
-      // Buscar contas de negócio
-              const accountsResponse = await fetch(`${META_URLS.GRAPH_API}/me/accounts?access_token=${longLivedData.access_token}`);
-      const accountsData = await accountsResponse.json() as FacebookBusinessAccountsResponse;
-
-      if (accountsData.error) {
-        throw new Error(`Erro ao buscar contas: ${accountsData.error.message}`);
-      }
-
-      // Salvar token no banco - USAR TABELA CORRETA (whatsapp_tokens)
-      const expiresAt = new Date();
-      expiresAt.setSeconds(expiresAt.getSeconds() + longLivedData.expires_in);
-
-      // Buscar ou criar integração WhatsApp
-      let integration = await supabase
-        .from('whatsapp_integrations')
-        .select('*')
-        .eq('restaurant_id', restaurantId)
-        .single();
-
-      if (!integration.data) {
-        // Criar integração se não existir
-        const { data: newIntegration, error: createError } = await supabase
-          .from('whatsapp_integrations')
-          .insert({
-            restaurant_id: restaurantId,
-            instance_name: 'WhatsApp Business',
-            status: 'connected',
-            oauth_access_token: longLivedData.access_token,
-            oauth_token_expires_at: expiresAt.toISOString(),
-            oauth_token_type: 'long_lived',
-            is_oauth_connected: true,
-            last_oauth_refresh: new Date().toISOString()
-          })
-          .select()
-          .single();
-
-        if (createError) {
-          throw new Error(`Erro ao criar integração: ${createError.message}`);
-        }
-
-        integration = { data: newIntegration, error: null } as any;
-      } else {
-        // Atualizar integração existente
-        const { error: updateError } = await supabase
-          .from('whatsapp_integrations')
-          .update({
-            oauth_access_token: longLivedData.access_token,
-            oauth_token_expires_at: expiresAt.toISOString(),
-            oauth_token_type: 'long_lived',
-            is_oauth_connected: true,
-            last_oauth_refresh: new Date().toISOString(),
-            status: 'connected'
-          })
-          .eq('id', integration.data.id);
-
-        if (updateError) {
-          throw new Error(`Erro ao atualizar integração: ${updateError.message}`);
-        }
-      }
-
-      // Salvar token na tabela meta_tokens (que REALMENTE EXISTE no banco)
-      // Primeiro, garantir que temos um usuário válido na tabela users
-      let finalUserId = userId;
-      
-      // Se o userId não for um UUID válido da tabela users, criar o usuário
-      if (!userData) {
-        console.log('🔍 Debug OAuth - Criando usuário na tabela users para meta_tokens');
-        
-        const { data: newUser, error: createUserError } = await supabase
-          .from('users')
-          .insert({
-            user_id: userId, // ID do Supabase Auth
-            name: 'Usuário WhatsApp',
-            role: 'owner'
-          })
-          .select()
-          .single();
-
-        if (createUserError) {
-          console.error('🔍 Debug OAuth - Erro ao criar usuário:', createUserError);
-          throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
-        }
-
-        finalUserId = newUser.id;
-        console.log('🔍 Debug OAuth - Usuário criado com sucesso:', newUser);
-      }
-
-      // Verificar se já existe um token para este usuário/restaurante
-      console.log('🔍 Debug OAuth - Verificando token existente para:', { finalUserId, restaurantId });
-      
-      const { data: existingToken, error: checkError } = await supabase
-        .from('meta_tokens')
-        .select('id, access_token, expires_at')
-        .eq('user_id', finalUserId)
-        .eq('restaurant_id', restaurantId)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        console.error('🔍 Debug OAuth - Erro ao verificar token existente:', checkError);
-      }
-
-      let metaTokenError;
-      
-      if (existingToken) {
-        // Atualizar token existente
-        console.log('🔍 Debug OAuth - Atualizando token existente:', existingToken.id);
-        
-        const { error: updateError } = await supabase
-          .from('meta_tokens')
-          .update({
-            access_token: longLivedData.access_token,
-            token_type: 'whatsapp_business',
-            expires_at: expiresAt.toISOString(),
-            business_accounts: accountsData.data || [],
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingToken.id);
-
-        metaTokenError = updateError;
-      } else {
-        // Criar novo token
-        console.log('🔍 Debug OAuth - Criando novo token');
-        
-        const { error: insertError } = await supabase
-          .from('meta_tokens')
-          .insert({
-            user_id: finalUserId,
-            restaurant_id: restaurantId,
-            access_token: longLivedData.access_token,
-            token_type: 'whatsapp_business',
-            expires_at: expiresAt.toISOString(),
-            business_accounts: accountsData.data || []
-          });
-
-        metaTokenError = insertError;
-      }
-
-      if (metaTokenError) {
-        console.error('🔍 Debug OAuth - Erro ao salvar em meta_tokens:', metaTokenError);
-        throw new Error(`Erro ao salvar token: ${metaTokenError.message}`);
-      }
-
-      console.log('🔍 Debug OAuth - Token salvo com sucesso em meta_tokens');
-
-      return {
-        success: true,
-        restaurantId,
-        businessAccounts: accountsData.data || []
-      };
+            const longUrl = `${META_URLS.OAUTH_ACCESS_TOKEN}?${longLivedParams.toString()}`;
+      const longData = await fetch(longUrl).then(res => res.json()) as { access_token: string; token_type: string; expires_in: number; error?: { message: string } };
+      if ((longData as any).error) throw new Error(`Erro ao trocar por long-lived token: ${(longData as any).error.message}`);
+ 
+      const expiresAt = new Date(Date.now() + (Number(longData.expires_in || 0) * 1000));
+ 
+      // Fetch businesses for metadata
+      const accountsResponse = await fetch(`${META_URLS.GRAPH_API}/me/businesses?fields=id,name&access_token=${longData.access_token}`);
+      const accountsData = await accountsResponse.json() as { data?: Array<{ id: string; name: string }> };
+ 
+      // Persist in oauth_tokens (canonical)
+      const businessId = Array.isArray(accountsData?.data) && accountsData.data!.length > 0 ? accountsData.data![0].id : 'unknown';
+      const scopes = (process.env.OAUTH_SCOPES || META_CONFIG.OAUTH_SCOPES).split(',').map(s => s.trim());
+      await supabase
+        .from('oauth_tokens')
+        .upsert({
+          provider: 'meta',
+          business_id: businessId,
+          restaurant_id: restaurantId,
+          access_token: longData.access_token,
+          token_type: 'long_lived',
+          expires_at: expiresAt.toISOString(),
+          scope: scopes,
+          metadata: { businesses: accountsData?.data || [] },
+          is_active: true
+        });
+ 
+      return { success: true, restaurantId, businessAccounts: accountsData?.data || [] };
     } catch (error) {
       throw new Error(`Erro no callback Meta: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
