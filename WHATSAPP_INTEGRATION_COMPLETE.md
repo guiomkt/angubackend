@@ -471,3 +471,56 @@ O sistema está pronto para produção e pode lidar com todos os cenários de in
 **Status**: ✅ IMPLEMENTAÇÃO COMPLETA  
 **Data**: 2024-01-25  
 **Versão**: 2.0.0 (Corrigida e com Logs Detalhados)
+
+---
+
+## 📖 Guia do Usuário - Como Criar uma Conta WhatsApp Business
+
+### ⚠️ Problema Comum
+Se você receber a mensagem: *"OAuth concluído, mas nenhuma conta WhatsApp Business foi encontrada"*, significa que você precisa criar uma conta WhatsApp Business no Facebook Business Manager.
+
+### 🔧 Solução Passo a Passo
+
+#### 1. Acesse o Facebook Business Manager
+- Vá para [https://business.facebook.com](https://business.facebook.com)
+- Faça login com sua conta do Facebook
+
+#### 2. Crie ou Selecione um Business
+- Se você não tem um Business Manager, crie um
+- Se já tem, selecione o business apropriado
+
+#### 3. Navegue para WhatsApp Business
+- No menu lateral, clique em **"Configurações"** (ícone de engrenagem)
+- Clique em **"Contas"** → **"Contas do WhatsApp"**
+
+#### 4. Adicione uma Conta WhatsApp Business
+- Clique no botão **"Adicionar"** (azul)
+- Selecione **"Criar uma nova conta do WhatsApp Business"**
+- Siga o assistente de configuração
+
+#### 5. Configure sua Conta
+- **Nome da conta**: Use o nome do seu negócio
+- **Categoria**: Selecione a categoria apropriada
+- **País**: Selecione seu país
+- **Moeda**: Selecione a moeda do seu país
+
+#### 6. Adicione um Número de Telefone
+- Clique em **"Adicionar número de telefone"**
+- Digite seu número de telefone comercial
+- Verifique o número via SMS ou chamada
+- Configure um PIN de 6 dígitos
+
+#### 7. Complete a Configuração
+- Adicione informações do seu negócio
+- Configure o perfil comercial
+- Revise e confirme todas as informações
+
+#### 8. Volte ao Sistema
+- Após criar a conta WhatsApp Business
+- Volte ao sistema e clique em **"Conectar WhatsApp Business"** novamente
+- O sistema agora deve encontrar sua conta automaticamente
+
+### 🆘 Precisa de Ajuda?
+- **Documentação oficial**: [Meta for Developers - WhatsApp Business](https://developers.facebook.com/docs/whatsapp/)
+- **Suporte**: Entre em contato com o suporte técnico
+
