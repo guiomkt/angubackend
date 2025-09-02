@@ -3,6 +3,7 @@ import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
 import { supabase } from '../config/database';
 import logger, { getCorrelationId, maskPhoneNumber } from '../config/logger';
 import { setupIntegration as setupAgentIntegration, verifyNumber as agentVerifyNumber } from '../services/whatsappIntegrationAgent';
+import { AuthService } from '../services/authService';
 
 const router = Router();
 
@@ -91,6 +92,38 @@ router.post('/verify-number', authenticateToken, async (req: AuthenticatedReques
   } catch (error: any) {
     logger.error({ correlationId, action: 'verify-number', error: error.message });
     return res.status(500).json({ success: false, message: 'Erro interno' });
+  }
+});
+
+// Embedded signup start (compat): generate Meta OAuth URL with required scopes
+router.get('/signup/start', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const restaurantId = req.user?.restaurant_id;
+    if (!userId || !restaurantId) return res.status(400).json({ success: false, message: 'Usuário ou restaurante não encontrado' });
+    const data = await AuthService.initiateMetaLogin(userId);
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Erro ao iniciar signup', error: error.message });
+  }
+});
+
+// Embedded signup status (compat): by state or user
+router.get('/signup/status', async (req: Request, res: Response) => {
+  try {
+    const state = (req.query.state as string) || null;
+    if (state) {
+      const { data } = await supabase
+        .from('whatsapp_signup_states')
+        .select('status, waba_id, phone_number_id, phone_number, business_id, verification_status')
+        .eq('state', state)
+        .maybeSingle();
+      return res.json({ success: true, data: data || { status: 'pending' } });
+    }
+    // If no state, attempt JWT-based lookup (optional)
+    return res.status(400).json({ success: false, message: 'state é obrigatório sem autenticação' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Erro ao obter status', error: error.message });
   }
 });
 
