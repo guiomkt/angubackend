@@ -452,69 +452,67 @@ export class AuthService {
 
   static async initiateMetaLogin(userId: string): Promise<any> {
     try {
-      // Buscar dados do usuário e restaurante
-      // O userId que vem do JWT é o id do auth.users
-      // Precisamos buscar na tabela users onde user_id = userId
+      // Buscar dados do usuário e restaurante pela tabela users
       const user = await supabase
         .from('users')
-        .select(`
-          *,
-          restaurants (*)
-        `)
+        .select('id, user_id, name, role, restaurant_id')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
       if (!user.data) {
-        // Se não encontrar na tabela users, tentar buscar direto no restaurante
+        // Buscar restaurante por auth user id
         const restaurant = await supabase
           .from('restaurants')
-          .select('*')
+          .select('id')
           .eq('user_id', userId)
           .single();
-        
+
         if (!restaurant.data) {
           throw new Error('Restaurante não encontrado');
         }
-        
-        const restaurantId = restaurant.data.id;
-        
-              // Criar um usuário na tabela users se não existir
+
+        // Criar usuário mínimo sem coluna email
         const { data: newUser, error: createUserError } = await supabase
           .from('users')
           .insert({
-            user_id: userId, // ID do Supabase Auth
+            user_id: userId,
             name: 'Usuário WhatsApp',
-            email: '', // Será preenchido depois
             role: 'owner'
           })
-          .select()
+          .select('id')
           .single();
-        
+
         if (createUserError) {
           throw new Error(`Erro ao criar usuário: ${createUserError.message}`);
         }
-        
+
         return {
-          authUrl: this.generateAuthUrl(newUser.id, restaurantId),
-          state: this.generateState(newUser.id, restaurantId)
+          authUrl: this.generateAuthUrl(newUser.id, restaurant.data.id),
+          state: this.generateState(newUser.id, restaurant.data.id)
         };
       }
 
-      const restaurantId = user.data.restaurant_id;
-      
+      let restaurantId = (user.data as any).restaurant_id;
+      if (!restaurantId) {
+        const r = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle();
+        restaurantId = r.data?.id;
+      }
+
       if (!restaurantId) {
         throw new Error('Restaurante não encontrado');
       }
 
-      // Criar state com dados necessários
-      // IMPORTANTE: Em produção, SEMPRE usar a URL correta
       const isProduction = process.env.NODE_ENV === 'production';
       const frontendUrl = isProduction 
         ? 'https://www.angu.ai' 
         : (process.env.FRONTEND_URL || 'http://localhost:5173');
-      
+
       const stateData = {
-        userId: user.data.id, // Usar o ID da tabela users, não do auth.users
+        userId: user.data.id,
         restaurantId,
         redirectUrl: `${frontendUrl}/whatsapp/callback`,
         timestamp: Date.now()
@@ -522,23 +520,19 @@ export class AuthService {
 
       const encodedState = encodeURIComponent(JSON.stringify(stateData));
 
-      // Gerar URL de autorização
       const clientId = process.env.FACEBOOK_APP_ID;
       const redirectUri = process.env.REDIRECT_URI || `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/auth/meta/callback`;
-      
+
       const params = new URLSearchParams({
         client_id: clientId!,
         redirect_uri: redirectUri,
         state: encodedState,
-        scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
+        scope: META_CONFIG.OAUTH_SCOPES
       });
 
-      const authUrl = `${META_OAUTH_DIALOG_URL}?${params.toString()}`;
+      const authUrl = `${META_URLS.OAUTH_DIALOG}?${params.toString()}`;
 
-      return {
-        authUrl,
-        state: encodedState
-      };
+      return { authUrl, state: encodedState };
     } catch (error) {
       throw new Error(`Erro ao iniciar login Meta: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
