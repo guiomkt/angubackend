@@ -924,7 +924,7 @@ class WhatsAppService {
 
           const errorMessage = wabaError.message === 'WABA_CREATION_FAILED' 
             ? 'OAuth concluído, mas falhamos ao criar automaticamente uma conta WhatsApp Business. Complete o processo no Facebook Business Manager.'
-            : 'OAuth concluído, mas nenhuma conta WhatsApp Business foi encontrada. Para usar o WhatsApp Business, você precisa primeiro criar uma conta no Facebook Business Manager.';
+            : 'OAuth concluído, mas nenhuma conta WhatsApp Business foi encontrada. Complete o processo no Facebook Business Manager.';
 
           return {
             success: false,
@@ -932,7 +932,7 @@ class WhatsAppService {
             status: 'awaiting_waba_creation',
             error_details: wabaError.message === 'WABA_CREATION_FAILED' 
               ? 'Falha na criação automática via BSP. Verifique logs para detalhes.'
-              : 'Nenhuma WABA existente encontrada. Usuário precisa criar uma conta WhatsApp Business no Facebook Business Manager.'
+              : 'Nenhuma WABA existente encontrada.'
           };
         } else {
           throw wabaError;
@@ -1392,9 +1392,10 @@ class WhatsAppService {
       throw new Error(`Falha ao atualizar estado: ${error.message}`);
     }
   }
+
   /**
-   * CORRIGIDO: Cria WABA para o cliente usando BSP System User Token
-   * Baseado na documentação oficial do Meta - BSP deve criar WABAs para clientes
+   * Descobre uma conta WhatsApp Business (WABA) ou cria uma automaticamente via BSP.
+   * Implementa o fluxo híbrido: primeiro descobre com user token, depois cria com BSP se necessário.
    */
   public static async discoverWABA(
     userId: string, 
@@ -1402,123 +1403,122 @@ class WhatsAppService {
     userAccessToken?: string
   ): Promise<string> {
     try {
-      console.log('🔍 Iniciando criação de WABA via BSP...', { userId, restaurantId, hasUserToken: !!userAccessToken });
+      console.log('🔍 Iniciando descoberta/criação de WABA (fluxo híbrido)...', { userId, restaurantId, hasUserToken: !!userAccessToken });
       
-      if (!userAccessToken) {
-        throw new Error('User Access Token é necessário para criar WABA');
-      }
-      
-      // ESTRATÉGIA BSP: Criar WABA usando System User Token
-      console.log('🔍 Criando WABA via BSP System User Token...');
-      
-      try {
-        // 1. Primeiro, obter informações do usuário para criar WABA personalizada
-        const userInfoResponse = await axios.get(
-          `${this.META_GRAPH_URL}/me?fields=id,name,email`,
-          {
-            headers: { 'Authorization': `Bearer ${userAccessToken}` }
-          }
-        );
-
-        const userInfo = userInfoResponse.data;
-        console.log('🔍 Informações do usuário:', { id: userInfo.id, name: userInfo.name });
-
-        // 2. Criar WABA usando BSP System User Token
-        const wabaName = `${userInfo.name || 'Cliente'} - WhatsApp Business`;
+      // ESTRATÉGIA 1: Tentar descobrir WABA existente com User Access Token
+      if (userAccessToken) {
+        console.log('🔍 ESTRATÉGIA 1: Buscando WABA existente com User Access Token...');
         
-        const createWabaResponse = await axios.post(
-          `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/client_whatsapp_applications`,
-          {
-            name: wabaName,
-            business_verification_status: 'not_verified' // Cliente pode verificar depois
-          },
-          {
-            headers: { 
-              'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
-              'Content-Type': 'application/json'
+        try {
+          // Buscar WABAs via business accounts do usuário
+          const businessResponse = await axios.get<BusinessListResponse>(
+            `${this.META_GRAPH_URL}/me/businesses?fields=id,name`,
+            {
+              headers: { 'Authorization': `Bearer ${userAccessToken}` }
+            }
+          );
+
+          const businesses = businessResponse.data?.data || [];
+          console.log(`🔍 Businesses encontrados: ${businesses.length}`, businesses.map(b => ({ id: b.id, name: b.name })));
+
+          // Para cada business, verificar se tem WABA
+          for (const business of businesses) {
+            try {
+              console.log(`🔍 Verificando business: ${business.name} (${business.id})`);
+              
+              const businessWabaResponse = await axios.get<BusinessWABAResponse>(
+                `${this.META_GRAPH_URL}/${business.id}?fields=whatsapp_business_accounts{id,name,status}`,
+                {
+                  headers: { 'Authorization': `Bearer ${userAccessToken}` }
+                }
+              );
+
+              if (businessWabaResponse.data?.whatsapp_business_accounts?.data && businessWabaResponse.data.whatsapp_business_accounts.data.length > 0) {
+                const wabaId = businessWabaResponse.data.whatsapp_business_accounts.data[0].id;
+                console.log('🔍 ✅ WABA encontrada via business:', wabaId);
+                return wabaId;
+              }
+            } catch (error: any) {
+              console.log(`🔍 Business ${business.name} sem WABA:`, error.response?.data?.error?.message || 'sem WABA');
+              continue;
             }
           }
-        );
+        } catch (error: any) {
+          console.log('🔍 ❌ Erro ao buscar businesses:', error.response?.data || error.message);
+        }
 
-        const wabaId = createWabaResponse.data.id;
-        console.log('🔍 ✅ WABA criada com sucesso:', wabaId);
+                  // Tentar buscar via páginas (fallback)
+          try {
+            const pagesResponse = await axios.get<PagesResponse>(
+              `${this.META_GRAPH_URL}/me/accounts`,
+              {
+                headers: { 'Authorization': `Bearer ${userAccessToken}` }
+              }
+            );
 
-        // 3. Salvar informações no banco
-        await this._updateSignupState(userId, restaurantId, {
-          business_id: BSP_CONFIG.BSP_BUSINESS_ID,
-          waba_id: wabaId,
-          waba_name: wabaName,
-          status: 'waba_created'
-        });
+            const pages = pagesResponse.data?.data || [];
+            console.log(`🔍 Páginas encontradas: ${pages.length}`, pages.map(p => ({ id: p.id, name: p.name })));
 
-        // 4. Adicionar System User à WABA criada
-        try {
-          await axios.post(
-            `${this.META_GRAPH_URL}/${wabaId}/assigned_users`,
-            {
-              user: BSP_CONFIG.BSP_BUSINESS_ID, // System User ID
-              tasks: ['MANAGE'] // Permissões completas
-            },
-            {
-              headers: { 
-                'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
+            // Para cada página, verificar se tem WABA conectado
+            for (const page of pages) {
+              try {
+                console.log(`🔍 Verificando página: ${page.name} (${page.id})`);
+                
+                const pageWabaResponse = await axios.get<PageWABAResponse>(
+                  `${this.META_GRAPH_URL}/${page.id}?fields=whatsapp_business_account{id,name,status}`,
+                  {
+                    headers: { 'Authorization': `Bearer ${userAccessToken}` }
+                  }
+                );
+
+                if (pageWabaResponse.data?.whatsapp_business_account) {
+                  const wabaId = pageWabaResponse.data.whatsapp_business_account.id;
+                  console.log('🔍 ✅ WABA encontrada via página:', wabaId);
+                  return wabaId;
+                }
+              } catch (error: any) {
+                // Página sem WABA conectado - continuar para próxima
+                console.log(`🔍 Página ${page.name} sem WABA conectado:`, error.response?.data?.error?.message || 'sem WABA');
+                continue;
               }
             }
-          );
-          console.log('🔍 ✅ System User adicionado à WABA');
-        } catch (assignError: any) {
-          console.log('🔍 ⚠️ Erro ao adicionar System User (não crítico):', assignError.response?.data?.error?.message);
-        }
-
-        return wabaId;
-
-      } catch (error: any) {
-        console.error('🔍 ❌ Erro ao criar WABA via BSP:', error.response?.data || error.message);
-        
-        // Se falhou, tentar buscar WABA existente como fallback
-        console.log('🔍 Tentando buscar WABA existente como fallback...');
-        
-        try {
-          // Buscar WABAs existentes do BSP
-          const existingWabasResponse = await axios.get(
-            `${this.META_GRAPH_URL}/${BSP_CONFIG.BSP_BUSINESS_ID}/client_whatsapp_business_accounts`,
-            {
-              headers: { 'Authorization': `Bearer ${BSP_CONFIG.SYSTEM_USER_ACCESS_TOKEN}` }
-            }
-          );
-
-          const existingWabas = existingWabasResponse.data?.data || [];
-          console.log(`🔍 WABAs existentes encontradas: ${existingWabas.length}`);
-
-          if (existingWabas.length > 0) {
-            // Usar a primeira WABA disponível
-            const wabaId = existingWabas[0].id;
-            console.log('🔍 ✅ Usando WABA existente:', wabaId);
-            
-            await this._updateSignupState(userId, restaurantId, {
-              business_id: BSP_CONFIG.BSP_BUSINESS_ID,
-              waba_id: wabaId,
-              status: 'waba_found'
-            });
-            
-            return wabaId;
+          } catch (error: any) {
+            console.log('🔍 ❌ Erro ao buscar via páginas:', error.response?.data || error.message);
           }
-        } catch (fallbackError: any) {
-          console.error('🔍 ❌ Fallback também falhou:', fallbackError.response?.data || fallbackError.message);
-        }
+      }
+
+      // ESTRATÉGIA 2: Se não encontrou WABA existente, tentar criar via BSP
+      console.log('🔍 ESTRATÉGIA 2: Nenhuma WABA existente encontrada, tentando criar via BSP...');
+      
+      if (!userAccessToken) {
+        throw new Error('User Access Token é necessário para criar WABA via BSP');
+      }
+      
+      try {
+        const wabaId = await this._createWABAViaBSP(userId, restaurantId, userAccessToken);
+        console.log('🔍 ✅ WABA criada automaticamente via BSP:', wabaId);
+        return wabaId;
+      } catch (createError: any) {
+        console.error('🔍 ❌ Falha na criação automática via BSP:', createError.message);
+        
+        // Marcar estado como awaiting_waba_creation
+        await this._updateSignupState(userId, restaurantId, {
+          status: 'awaiting_waba_creation'
+        });
 
         throw new Error('WABA_CREATION_FAILED');
       }
 
     } catch (error: any) {
-      if (error.message === 'WABA_CREATION_FAILED') {
+      if (error.message === 'WABA_NOT_FOUND' || error.message === 'WABA_CREATION_FAILED') {
         throw error;
       }
-      console.error('�� ❌ Erro geral ao criar/descobrir WABA:', error);
-      throw new Error(`Falha ao configurar WhatsApp Business: ${error.response?.data?.error?.message || error.message}`);
+      console.error('🔍 ❌ Erro geral ao descobrir/criar WABA:', error);
+      throw new Error(`Falha ao descobrir/criar WhatsApp Business: ${error.response?.data?.error?.message || error.message}`);
     }
   }
+
+  /**
    * Cria uma nova WABA automaticamente via BSP usando System User Token.
    * @private
    */
