@@ -660,12 +660,12 @@ class WhatsAppService {
         .select('*')
         .eq('restaurant_id', restaurant_id)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Erro ao buscar integração ativa do WhatsApp:', error);
+      // Normal to not have an integration
       return null;
     }
   }

@@ -199,6 +199,21 @@ router.post('/template/send', authenticateToken, WhatsAppController.sendTemplate
 
 // --- ROTAS EXISTENTES (mantidas para compatibilidade) ---
 
+// Missing OAuth authorize route
+router.get("/oauth/authorize", authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const restaurantId = (req as any).user?.restaurant_id;
+    if (!restaurantId) {
+      return res.status(400).json({ success: false, message: "Restaurant not found" });
+    }
+    // Generate OAuth URL for WhatsApp
+    const oauthUrl = `https://www.facebook.com/v22.0/dialog/oauth?client_id=${process.env.FACEBOOK_APP_ID}&redirect_uri=${encodeURIComponent(process.env.API_BASE_URL + "/api/whatsapp/oauth/callback")}&scope=whatsapp_business_management,whatsapp_business_messaging&state=${encodeURIComponent(JSON.stringify({ restaurant_id: restaurantId, flow: "oauth" }))}`;
+    return res.json({ success: true, data: { oauth_url: oauthUrl } });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+});
+
 /**
  * @swagger
  * /api/whatsapp/oauth/callback:
