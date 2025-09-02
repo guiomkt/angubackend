@@ -236,56 +236,206 @@ export class WhatsAppController {
   /**
    * Processa o callback OAuth do Facebook/Meta.
    * Novo método usando o serviço modernizado.
+   * CORRIGIDO: Agora retorna HTML para funcionar com popup
    */
   static async handleOAuthCallback(req: Request, res: Response, next: NextFunction) {
     try {
-      const { code, state } = req.query;
+      const { code, state, error, error_description } = req.query;
+
+      // Se há erro do OAuth
+      if (error) {
+        const errorMsg = String(error_description || error || 'Erro na autenticação').replace(/'/g, "\\'");
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Erro na Autenticação</title>
+            <style>
+              body { font-family: system-ui; padding: 20px; text-align: center; }
+              .error { color: #d32f2f; }
+            </style>
+          </head>
+          <body>
+            <h2 class="error">Erro na autenticação WhatsApp</h2>
+            <p>${errorMsg}</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'WHATSAPP_AUTH_ERROR',
+                  error: '${errorMsg}',
+                  state: '${state || ''}'
+                }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+          </html>
+        `);
+      }
 
       if (!code) {
-        return res.status(400).json({
-          success: false,
-          message: 'Authorization code is required'
-        });
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Erro na Autenticação</title>
+          </head>
+          <body>
+            <h2>Erro: Código de autorização não recebido</h2>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'WHATSAPP_AUTH_ERROR',
+                  error: 'Authorization code is required'
+                }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+          </html>
+        `);
       }
 
       if (!state) {
-        return res.status(400).json({
-          success: false,
-          message: 'State parameter is required'
-        });
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Erro na Autenticação</title>
+          </head>
+          <body>
+            <h2>Erro: State parameter é obrigatório</h2>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'WHATSAPP_AUTH_ERROR',
+                  error: 'State parameter is required'
+                }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+          </html>
+        `);
       }
 
-      // Usar o novo método do serviço
+      // Processar OAuth em background
+      console.log('🔍 Processando OAuth callback...');
       const result = await WhatsAppService.handleOAuthCallback(code as string, state as string);
 
-              if (result.success) {
-          const redirectUrl = result.waba_id 
-            ? `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=waba_detected&state=${encodeURIComponent(state as string)}`
-            : `${process.env.FRONTEND_URL || 'https://angu.ai'}/settings/integrations?whatsapp=awaiting_waba&state=${encodeURIComponent(state as string)}`;
-
-        return res.json({
-          success: true,
-          message: result.message,
-          data: {
-            ...result,
-            redirect_url: redirectUrl
-          }
-        });
+      if (result.success) {
+        const safeMessage = String(result.message || 'Conectado com sucesso').replace(/'/g, "\\'");
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>WhatsApp Conectado</title>
+            <style>
+              body { 
+                font-family: system-ui; 
+                padding: 20px; 
+                text-align: center; 
+                background-color: #f5f5f5;
+              }
+              .success { color: #2e7d32; }
+              .loading { 
+                display: inline-block; 
+                width: 20px; 
+                height: 20px; 
+                border: 2px solid #ccc; 
+                border-top: 2px solid #2e7d32; 
+                border-radius: 50%; 
+                animation: spin 1s linear infinite; 
+              }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            </style>
+          </head>
+          <body>
+            <div class="loading"></div>
+            <h2 class="success">WhatsApp Business conectado com sucesso!</h2>
+            <p>${safeMessage}</p>
+            <p>Esta janela será fechada automaticamente...</p>
+            <script>
+              console.log('OAuth callback processado com sucesso');
+              
+              // Notificar a janela pai do sucesso
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'WHATSAPP_AUTH_SUCCESS',
+                  code: '${code}',
+                  state: '${state}',
+                  success: true,
+                  message: '${safeMessage}',
+                  waba_id: '${result.waba_id || ''}',
+                  status: '${result.status}'
+                }, '*');
+              }
+              
+              // Fechar janela após 3 segundos
+              setTimeout(() => {
+                window.close();
+              }, 3000);
+            </script>
+          </body>
+          </html>
+        `);
       } else {
-        return res.status(400).json({
-          success: false,
-          message: result.message,
-          data: result
-        });
+        const safeMessage = String(result.message || 'Erro na configuração').replace(/'/g, "\\'");
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Erro na Configuração</title>
+            <style>
+              body { font-family: system-ui; padding: 20px; text-align: center; }
+              .error { color: #d32f2f; }
+            </style>
+          </head>
+          <body>
+            <h2 class="error">Erro na configuração WhatsApp</h2>
+            <p>${safeMessage}</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({
+                  type: 'WHATSAPP_AUTH_ERROR',
+                  error: '${safeMessage}',
+                  state: '${state}'
+                }, '*');
+              }
+              setTimeout(() => window.close(), 5000);
+            </script>
+          </body>
+          </html>
+        `);
       }
 
     } catch (error: any) {
       console.error('Erro no OAuth callback:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro interno no callback OAuth',
-        error: error.message
-      });
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Erro Interno</title>
+          <style>
+            body { font-family: system-ui; padding: 20px; text-align: center; }
+            .error { color: #d32f2f; }
+          </style>
+        </head>
+        <body>
+          <h2 class="error">Erro interno no callback OAuth</h2>
+          <p>Por favor, tente novamente.</p>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({
+                type: 'WHATSAPP_AUTH_ERROR',
+                error: 'Erro interno no callback OAuth'
+              }, '*');
+            }
+            setTimeout(() => window.close(), 5000);
+          </script>
+        </body>
+        </html>
+      `);
     }
   }
 
