@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import axios from 'axios';
 import { supabase } from '../config/database';
-import logger, { getCorrelationId, safe } from '../config/logger';
+import logger, { getCorrelationId, safe, maskPhoneNumber } from '../config/logger';
 import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { META_CONFIG, META_URLS, BSP_CONFIG } from '../config/meta';
 
@@ -246,38 +246,66 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     if (resolved_business_id) {
       const url = `${WHATSAPP_API_URL}/${resolved_business_id}/owned_whatsapp_business_accounts`;
       const t0 = Date.now();
-      const resp = await axios.get(url, { params: { access_token: graphToken } });
-      const latency_ms = Date.now() - t0;
-      const j: any = resp.data;
-      const list = j?.data || [];
-      if (list.length > 0) waba_id = list[0].id;
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'WABA discovered');
+      try {
+        const resp = await axios.get(url, { params: { access_token: graphToken } });
+        const latency_ms = Date.now() - t0;
+        const j: any = resp.data;
+        const list = j?.data || [];
+        if (list.length > 0) waba_id = list[0].id;
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'WABA discovered');
+        await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: true, details: { graph_endpoint: url, http_status: 200, waba_id } });
+      } catch (e: any) {
+        const http_status = e?.response?.status || 500;
+        const error_message = e?.response?.data?.error?.message || e.message;
+        await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message, details: { graph_endpoint: url, http_status } });
+        throw e;
+      }
     }
 
     // Find existing phone numbers if not provided
     if (!resolved_phone_number_id && waba_id) {
       const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
       const t1 = Date.now();
-      const resp = await axios.get(url, { params: { access_token: graphToken } });
-      const latency_ms = Date.now() - t1;
-      const j: any = resp.data;
-      const list = j?.data || [];
-      if (list.length > 0) {
-        resolved_phone_number_id = list[0].id;
-        resolved_display_phone_number = list[0].display_phone_number || null;
+      try {
+        const resp = await axios.get(url, { params: { access_token: graphToken } });
+        const latency_ms = Date.now() - t1;
+        const j: any = resp.data;
+        const list = j?.data || [];
+        if (list.length > 0) {
+          resolved_phone_number_id = list[0].id;
+          resolved_display_phone_number = list[0].display_phone_number || null;
+        }
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Phone number discovered');
+        await writeIntegrationLog({ restaurant_id, step: 'phone_discovery', success: true, details: { graph_endpoint: url, http_status: 200, phone_number_id: resolved_phone_number_id, display_phone_number: maskPhoneNumber(resolved_display_phone_number || '') } });
+      } catch (e: any) {
+        const http_status = e?.response?.status || 500;
+        const error_message = e?.response?.data?.error?.message || e.message;
+        await writeIntegrationLog({ restaurant_id, step: 'phone_discovery', success: false, error_message, details: { graph_endpoint: url, http_status } });
+        // Detect unclaimed/number not found
+        if (/not\s*claimed|not\s*found/i.test(String(error_message))) {
+          res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required', waba_id } });
+          return;
+        }
+        throw e;
       }
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Phone number discovered');
     }
 
     // Subscribe app to WABA messages
     if (waba_id) {
       const url = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
       const t2 = Date.now();
-      const resp = await axios.post(url, { access_token: graphToken, subscribed_fields: ['messages'] }, { headers: { 'Content-Type': 'application/json' } });
-      const latency_ms = Date.now() - t2;
-      const json: any = resp.data ?? {};
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'success', http_status: 200, graph_endpoint: url, latency_ms, details: safe(json as any) }, 'Subscribe app result');
-      await writeConnectionLog({ restaurant_id, waba_id, action: 'subscribe', details: { http_status: 200 } });
+      try {
+        const resp = await axios.post(url, { access_token: graphToken, subscribed_fields: ['messages'] }, { headers: { 'Content-Type': 'application/json' } });
+        const latency_ms = Date.now() - t2;
+        const json: any = resp.data ?? {};
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Subscribe app result');
+        await writeIntegrationLog({ restaurant_id, step: 'subscribe', success: true, details: { graph_endpoint: url, http_status: 200 } });
+      } catch (e: any) {
+        const http_status = e?.response?.status || 500;
+        const error_message = e?.response?.data?.error?.message || e.message;
+        await writeIntegrationLog({ restaurant_id, step: 'subscribe', success: false, error_message, details: { graph_endpoint: url, http_status } });
+        throw e;
+      }
     }
 
     const webhook_url = `${API_BASE_URL}/api/whatsapp/webhook`;
@@ -342,9 +370,78 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
     const status = error?.response?.status || 500
+    // If unclaimed hint appears here, respond with claim_required
+    if (/not\s*claimed|not\s*found/i.test(String(errMsg))) {
+      res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required' } });
+      return;
+    }
     logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: error?.response?.data }, 'Setup error');
-    await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: error?.message });
+    await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: errMsg, details: { http_status: status } });
     res.status(500).json({ success: false, error: errMsg });
+  }
+});
+
+// Claim phone number
+router.post('/claim', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req);
+  const { restaurant_id: bodyRestaurantId, cc, phone_number, method = 'sms' } = req.body || {};
+  const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
+
+  if (!restaurant_id || !cc || !phone_number) {
+    res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
+    return;
+  }
+
+  try {
+    // discover business + waba again
+    const tokenRow = await supabase
+      .from('oauth_tokens')
+      .select('*')
+      .eq('restaurant_id', restaurant_id)
+      .eq('provider', 'meta')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const oauthToken = tokenRow.data;
+    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || oauthToken?.access_token || '';
+
+    // Fetch WABA via business id from integration row if present
+    let waba_id: string | null = null;
+    const { data: integData } = await supabase
+      .from('whatsapp_business_integrations')
+      .select('metadata')
+      .eq('restaurant_id', restaurant_id)
+      .maybeSingle();
+    const metadata: any = integData ? (integData as any).metadata : null;
+    if (metadata && typeof metadata === 'object' && metadata.waba_id) {
+      waba_id = String(metadata.waba_id);
+    } else if (oauthToken?.business_id) {
+      const urlW = `${WHATSAPP_API_URL}/${oauthToken.business_id}/owned_whatsapp_business_accounts`;
+      const r = await axios.get(urlW, { params: { access_token: graphToken } });
+      waba_id = r.data?.data?.[0]?.id || null;
+    }
+
+    if (!waba_id) {
+      res.status(400).json({ success: false, error: 'WABA não encontrada para claim' });
+      return;
+    }
+
+    const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+    const t0 = Date.now();
+    try {
+      const resp = await axios.post(url, { cc, phone_number, method }, { params: { access_token: graphToken }, headers: { 'Content-Type': 'application/json' } });
+      const latency_ms = Date.now() - t0;
+      await writeIntegrationLog({ restaurant_id, step: 'phone_registration', success: true, details: { graph_endpoint: url, http_status: resp.status, phone_number: maskPhoneNumber(`${cc}${phone_number}`) } as any });
+      res.json({ success: true, data: { status: 'verification_sent', waba_id } });
+    } catch (e: any) {
+      const http_status = e?.response?.status || 500;
+      const error_message = e?.response?.data?.error?.message || e.message;
+      await writeIntegrationLog({ restaurant_id, step: 'phone_registration', success: false, error_message, details: { graph_endpoint: url, http_status } });
+      res.status(500).json({ success: false, error: error_message });
+    }
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Erro no claim' });
   }
 });
 
