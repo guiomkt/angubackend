@@ -63,8 +63,7 @@ router.get('/settings', authenticate, requireRestaurant, async (req: Authenticat
  *                 type: boolean
  *               sms_notifications:
  *                 type: boolean
- *               whatsapp_notifications:
- *                 type: boolean
+
  *               push_notifications:
  *                 type: boolean
  *               reservation_confirmation:

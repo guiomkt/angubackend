@@ -85,11 +85,11 @@ const router = express.Router()
  * @swagger
  * /api/auth/meta/login:
  *   get:
- *     summary: Inicia processo de OAuth com Meta para WhatsApp Business
+ *     summary: Inicia processo de OAuth com Meta
  *     description: |
- *       Gera URL de autorização para conectar WhatsApp Business via Meta OAuth.
+ *       Gera URL de autorização para conectar via Meta OAuth.
  *       Esta rota inicia o fluxo de autenticação que permite ao usuário autorizar
- *       o acesso às funcionalidades do WhatsApp Business API.
+ *       o acesso às funcionalidades das APIs da Meta.
  *       
  *       **Fluxo:**
  *       1. Usuário chama esta rota
@@ -99,11 +99,9 @@ const router = express.Router()
  *       5. Sistema processa tokens e salva credenciais
  *       
  *       **Permissões necessárias:**
- *       - whatsapp_business_management
- *       - whatsapp_business_messaging
  *       - pages_manage_posts
  *       - ads_management
- *     tags: [Auth, WhatsApp]
+ *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -113,11 +111,6 @@ const router = express.Router()
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/MetaLoginResponse'
- *             example:
- *               success: true
- *               data:
- *                 authUrl: "https://www.facebook.com/v22.0/dialog/oauth?client_id=123&redirect_uri=https://api.cheffguio.com/api/auth/meta/callback&state=..."
- *                 state: "eyJ1c2VySWQiOiIxMjMiLCJyZXN0YXVyYW50SWQiOiI0NTYiLCJyZWRpcmVjdFVybCI6Imh0dHBzOi8vY2hlZmZndWlvLmNvbS93aGF0c2FwcCIsInRpbWVzdGFtcCI6MTYzNDU2Nzg5MH0="
  *       401:
  *         description: Token de autenticação inválido ou expirado
  *         content:
@@ -141,24 +134,19 @@ router.get('/meta/login', authenticate, AuthController.initiateMetaLogin)
  *     description: |
  *       Endpoint de callback para processar a resposta do OAuth da Meta.
  *       Esta rota é chamada automaticamente pelo Facebook após o usuário
- *       autorizar o acesso às funcionalidades do WhatsApp Business.
+ *       autorizar o acesso.
  *       
  *       **Processo automático:**
  *       1. Facebook redireciona para esta rota com code e state
  *       2. Sistema valida o state e troca code por token
  *       3. Sistema troca token curto por long-lived (60 dias)
- *       4. Sistema busca contas de negócio e WhatsApp Business
- *       5. Sistema salva credenciais no banco de dados
- *       6. Sistema redireciona para frontend com status
+ *       4. Sistema salva credenciais no banco de dados
+ *       5. Sistema redireciona para frontend com status
  *       
  *       **Parâmetros obrigatórios:**
  *       - code: Código de autorização fornecido pelo Facebook
  *       - state: Estado criptografado para validação
- *       
- *       **Redirecionamento:**
- *       - Desenvolvimento: localhost:5173/whatsapp
- *       - Produção: https://cheffguio.com/whatsapp
- *     tags: [Auth, WhatsApp]
+ *     tags: [Auth]
  *     parameters:
  *       - in: query
  *         name: code
@@ -166,14 +154,12 @@ router.get('/meta/login', authenticate, AuthController.initiateMetaLogin)
  *         schema:
  *           type: string
  *         description: Código de autorização fornecido pelo Facebook
- *         example: "AQD..."
  *       - in: query
  *         name: state
  *         required: true
  *         schema:
  *           type: string
  *         description: Estado criptografado para validação da requisição
- *         example: "eyJ1c2VySWQiOiIxMjMiLCJyZXN0YXVyYW50SWQiOiI0NTYiLCJyZWRpcmVjdFVybCI6Imh0dHBzOi8vY2hlZmZndWlvLmNvbS93aGF0c2FwcCIsInRpbWVzdGFtcCI6MTYzNDU2Nzg5MH0="
  *     responses:
  *       200:
  *         description: Autorização processada com sucesso
@@ -209,13 +195,12 @@ router.get('/meta/callback', AuthController.handleMetaCallback)
  *       
  *       **Segurança:**
  *       - Requer API Key válida no header X-API-Key
- *       - Token retornado é o mesmo usado para WhatsApp Business
  *       
  *       **Uso:**
  *       - Integrações com n8n para automação
  *       - Webhooks externos
  *       - Sistemas de terceiros autorizados
- *     tags: [Auth, WhatsApp, Integrations]
+ *     tags: [Auth, Integrations]
  *     security:
  *       - apiKeyAuth: []
  *     parameters:
