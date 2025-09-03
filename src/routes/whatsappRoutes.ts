@@ -253,35 +253,37 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       return;
     }
 
-    let resolved_business_id: string | null = client_business_id || oauthToken?.business_id || null;
+    const resolved_business_id: string | null = client_business_id || oauthToken?.business_id || null;
+    // The business_id from OAuth is for identifying the client, but for WABA discovery, we must use our BSP Business ID.
+    const discovery_business_id = BSP_CONFIG.BSP_BUSINESS_ID;
     let waba_id: string | null = null;
     let resolved_phone_number_id: string | null = phone_number_id || null;
     let resolved_display_phone_number: string | null = display_phone_number || null;
     let connection_status: 'active' | 'pending_verification' = 'active';
 
-    // Discover WABA via business id
-    if (!resolved_business_id && mode === 'auto') {
-      resolved_business_id = process.env.BSP_BUSINESS_ID || null;
+    // Discover WABA via our BSP Business ID
+    if (!discovery_business_id) {
+        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_BUSINESS_ID is not configured.' });
+        res.status(500).json({ status: "error", action: "invalid_bsp_token", message: 'BSP Business ID is not configured on the server.' });
+        return;
     }
 
-    if (resolved_business_id) {
-      const url = `${WHATSAPP_API_URL}/${resolved_business_id}/owned_whatsapp_business_accounts`;
-      const t0 = Date.now();
-      try {
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting WABA discovery');
-        const resp = await axios.get(url, { params: { access_token: graphToken } });
-        const latency_ms = Date.now() - t0;
-        const j: any = resp.data;
-        const list = j?.data || [];
-        if (list.length > 0) waba_id = list[0].id;
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'WABA discovered');
-        await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: true, details: { graph_endpoint: url, http_status: 200, waba_id } });
-      } catch (e: any) {
-        const http_status = e?.response?.status || 500;
-        const error_message = e?.response?.data?.error?.message || e.message;
-        await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message, details: { graph_endpoint: url, http_status } });
-        throw e;
-      }
+    const url = `${WHATSAPP_API_URL}/${discovery_business_id}/owned_whatsapp_business_accounts`;
+    const t0 = Date.now();
+    try {
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint, discovery_business_id }, 'Attempting WABA discovery');
+      const resp = await axios.get(url, { params: { access_token: graphToken } });
+      const latency_ms = Date.now() - t0;
+      const j: any = resp.data;
+      const list = j?.data || [];
+      if (list.length > 0) waba_id = list[0].id;
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'WABA discovered');
+      await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: true, details: { graph_endpoint: url, http_status: 200, waba_id } });
+    } catch (e: any) {
+      const http_status = e?.response?.status || 500;
+      const error_message = e?.response?.data?.error?.message || e.message;
+      await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message, details: { graph_endpoint: url, http_status, discovery_business_id } });
+      throw e;
     }
 
     // Step 2: Find or Claim Phone Number
