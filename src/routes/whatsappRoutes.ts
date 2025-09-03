@@ -40,6 +40,14 @@ function getTokenFingerprint(token: string | null | undefined): string {
   return `${token.slice(0, 5)}...`;
 }
 
+interface GraphPhoneResponse {
+  data: Array<{
+    id: string;
+    display_phone_number: string;
+    verified_name?: string;
+  }>;
+}
+
 async function writeIntegrationLog(params: {
   restaurant_id?: string;
   step: string;
@@ -211,7 +219,7 @@ router.get('/oauth/success', (req, res) => {
 // 2. Setup
 router.post('/setup', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
-  const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number } = req.body || {};
+  const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number, cc, phone_number } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
   const token_source = 'bsp_permanent';
   let graphToken = '';
@@ -245,6 +253,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     let waba_id: string | null = null;
     let resolved_phone_number_id: string | null = phone_number_id || null;
     let resolved_display_phone_number: string | null = display_phone_number || null;
+    let connection_status: 'active' | 'pending_verification' = 'active';
 
     // Discover WABA via business id
     if (!resolved_business_id && mode === 'auto') {
@@ -275,34 +284,46 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       }
     }
 
-    // Find existing phone numbers if not provided
-    if (!resolved_phone_number_id && waba_id) {
+    // Step 2: Find or Claim Phone Number
+    if (waba_id) {
       const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-      const t1 = Date.now();
-      try {
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting phone number discovery');
-        const resp = await axios.get(url, { params: { access_token: graphToken } });
-        const latency_ms = Date.now() - t1;
-        const j: any = resp.data;
-        const list = j?.data || [];
-        if (list.length > 0) {
-          resolved_phone_number_id = list[0].id;
-          resolved_display_phone_number = list[0].display_phone_number || null;
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting phone number discovery');
+      const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: graphToken } });
+      const phoneList = resp.data?.data || [];
+      const verifiedNumber = phoneList.find((p: any) => p.verified_name);
+
+      if (verifiedNumber) {
+        resolved_phone_number_id = verifiedNumber.id;
+        resolved_display_phone_number = verifiedNumber.display_phone_number;
+        connection_status = 'active';
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'success' }, 'Found existing verified phone number');
+      } else if (cc && phone_number) {
+        // No verified number found, try to claim one
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_claim', status: 'pending', waba_id }, 'No verified number found, attempting to claim a new one.');
+        const claimUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+        await axios.post(claimUrl, { cc, phone_number, method: 'sms' }, { params: { access_token: graphToken }, headers: { 'Content-Type': 'application/json' } });
+        
+        await writeIntegrationLog({ restaurant_id, step: 'phone_registration', success: true, details: { graph_endpoint: claimUrl, phone_number: maskPhoneNumber(`${cc}${phone_number}`) } });
+        
+        // Re-fetch numbers to get the ID of the new one
+        const refetchResp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: graphToken } });
+        const newList = refetchResp.data?.data || [];
+        const newNumber = newList.find((p: any) => p.display_phone_number.endsWith(phone_number));
+        
+        if (newNumber) {
+            resolved_phone_number_id = newNumber.id;
+            resolved_display_phone_number = newNumber.display_phone_number;
         }
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Phone number discovered');
-        await writeIntegrationLog({ restaurant_id, step: 'phone_discovery', success: true, details: { graph_endpoint: url, http_status: 200, phone_number_id: resolved_phone_number_id, display_phone_number: maskPhoneNumber(resolved_display_phone_number || '') } });
-      } catch (e: any) {
-        const http_status = e?.response?.status || 500;
-        const error_message = e?.response?.data?.error?.message || e.message;
-        await writeIntegrationLog({ restaurant_id, step: 'phone_discovery', success: false, error_message, details: { graph_endpoint: url, http_status } });
-        // Detect unclaimed/number not found
-        if (/not\s*claimed|not\s*found/i.test(String(error_message))) {
-          res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required', waba_id } });
-          return;
-        }
-        throw e;
+
+        connection_status = 'pending_verification';
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_claim', status: 'success', waba_id, phone_number_id: resolved_phone_number_id }, 'Phone number claimed, verification pending.');
+      } else {
+        logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'unclaimed' }, 'No phone numbers found and no new number provided to claim.');
+        res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required', waba_id } });
+        return;
       }
     }
+
 
     // Subscribe app to WABA messages
     if (waba_id) {
@@ -352,7 +373,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       phone_number: resolved_display_phone_number,
       webhook_url,
       webhook_verify_token: WEBHOOK_VERIFY_TOKEN,
-      connection_status: 'connected',
+      connection_status,
       metadata: { mode, waba_id }
     } as any;
 
@@ -371,7 +392,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
 
     const signupPayload: any = {
       restaurant_id,
-      status: 'phone_configured',
+      status: connection_status === 'active' ? 'completed' : 'pending_verification',
       waba_id: waba_id,
       phone_number_id: resolved_phone_number_id,
       phone_number: resolved_display_phone_number,
@@ -382,7 +403,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
     }
 
-    res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: 'connected' } });
+    res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
     const status = error?.response?.status || 500
@@ -512,7 +533,7 @@ router.post('/verify-number', authenticate, requireRestaurant, async (req: Authe
     logger.info({ correlationId, restaurant_id, action: 'verify_number', step: 'phone_verification', status: 'success', http_status: resp.status, graph_endpoint: url, latency_ms }, 'Verify number result');
     await writeConnectionLog({ restaurant_id, action: 'verify_number', details: { http_status: resp.status } });
 
-    await supabase.from('whatsapp_business_integrations').update({ verification_status: 'verified' }).eq('restaurant_id', restaurant_id);
+    await supabase.from('whatsapp_business_integrations').update({ connection_status: 'active' }).eq('restaurant_id', restaurant_id);
     await supabase.from('whatsapp_signup_states').update({ status: 'completed', verification_status: 'verified' }).eq('restaurant_id', restaurant_id);
 
     res.json({ success: true, data: { status: 'completed' } });
