@@ -255,8 +255,12 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       const url = `${WHATSAPP_API_URL}/${resolved_business_id}/owned_whatsapp_business_accounts`;
       const t0 = Date.now();
       try {
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting WABA discovery');
-        const resp = await axios.get(url, { params: { access_token: graphToken } });
+        const discoveryToken = oauthToken?.access_token || '';
+        const discoveryTokenSource = 'oauth';
+        const discoveryTokenFingerprint = getTokenFingerprint(discoveryToken);
+
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source: discoveryTokenSource, token_fingerprint: discoveryTokenFingerprint }, 'Attempting WABA discovery');
+        const resp = await axios.get(url, { params: { access_token: discoveryToken } });
         const latency_ms = Date.now() - t0;
         const j: any = resp.data;
         const list = j?.data || [];
