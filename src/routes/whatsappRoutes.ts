@@ -418,7 +418,7 @@ router.post('/claim', authenticate, requireRestaurant, async (req: Authenticated
       waba_id = String(metadata.waba_id);
     } else if (oauthToken?.business_id) {
       const urlW = `${WHATSAPP_API_URL}/${oauthToken.business_id}/owned_whatsapp_business_accounts`;
-      const r = await axios.get(urlW, { params: { access_token: graphToken } });
+      const r = await axios.get<{ data: Array<{ id: string }> }>(urlW, { params: { access_token: graphToken } });
       waba_id = r.data?.data?.[0]?.id || null;
     }
 
