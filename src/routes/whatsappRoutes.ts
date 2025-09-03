@@ -35,6 +35,11 @@ function verifyState(state: string): any | null {
   }
 }
 
+function getTokenFingerprint(token: string | null | undefined): string {
+  if (!token) return 'none';
+  return `${token.slice(0, 5)}...`;
+}
+
 async function writeIntegrationLog(params: {
   restaurant_id?: string;
   step: string;
@@ -209,6 +214,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
   const token_source = 'bsp_permanent';
+  let graphToken = '';
 
   if (!restaurant_id) {
     res.status(400).json({ success: false, error: 'restaurant_id é obrigatório' });
@@ -227,7 +233,8 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       .maybeSingle();
 
     const oauthToken = tokenRow.data;
-    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
+    graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
+    const tokenFingerprint = getTokenFingerprint(graphToken);
 
     if (!graphToken) {
       res.status(400).json({ success: false, error: 'Token não encontrado para configurar WhatsApp' });
@@ -248,6 +255,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       const url = `${WHATSAPP_API_URL}/${resolved_business_id}/owned_whatsapp_business_accounts`;
       const t0 = Date.now();
       try {
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting WABA discovery');
         const resp = await axios.get(url, { params: { access_token: graphToken } });
         const latency_ms = Date.now() - t0;
         const j: any = resp.data;
@@ -268,6 +276,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
       const t1 = Date.now();
       try {
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting phone number discovery');
         const resp = await axios.get(url, { params: { access_token: graphToken } });
         const latency_ms = Date.now() - t1;
         const j: any = resp.data;
@@ -296,7 +305,9 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       const url = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
       const t2 = Date.now();
       try {
-        const resp = await axios.post(url, { access_token: graphToken, subscribed_fields: ['messages'] }, { headers: { 'Content-Type': 'application/json' } });
+        const request_body = { subscribed_fields: ['messages'] };
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint, request_body }, 'Attempting to subscribe app');
+        const resp = await axios.post(url, { ...request_body, access_token: graphToken }, { headers: { 'Content-Type': 'application/json' } });
         const latency_ms = Date.now() - t2;
         const json: any = resp.data ?? {};
         logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Subscribe app result');
@@ -371,19 +382,31 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
     const status = error?.response?.status || 500
+    const graphError = error?.response?.data?.error || null;
+
     // If unclaimed hint appears here, respond with claim_required
     if (/not\s*claimed|not\s*found/i.test(String(errMsg))) {
       res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required' } });
       return;
     }
     // Handle invalid OAuth token error specifically
-    if (error?.response?.data?.error?.code === 190) { // Graph API error code for invalid token
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: 'Invalid OAuth access token', details: { token_source, original_error: error?.response?.data?.error } }, 'Setup error: Invalid OAuth access token');
-      await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: 'Invalid OAuth access token', details: { token_source, http_status: status } });
-      res.status(401).json({ status: "error", action: "retry_with_bsp", message: "Invalid OAuth access token" });
+    if (graphError && graphError.code === 190) { // Graph API error code for invalid token
+      const errorDetails = {
+        token_source,
+        token_fingerprint: getTokenFingerprint(graphToken),
+        original_error: {
+          message: graphError.message,
+          code: graphError.code,
+          type: graphError.type,
+          fbtrace_id: graphError.fbtrace_id
+        }
+      };
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: 'Invalid OAuth access token', details: errorDetails }, 'Setup error: Invalid OAuth access token');
+      await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: 'Invalid OAuth access token', details: { ...errorDetails, http_status: status } });
+      res.status(401).json({ status: "error", action: "retry_with_bsp", message: "Invalid OAuth access token", error_details: errorDetails.original_error });
       return;
     }
-    logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: error?.response?.data }, 'Setup error');
+    logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: { ...error?.response?.data, graphError } }, 'Setup error');
     await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: errMsg, details: { http_status: status } });
     res.status(500).json({ success: false, error: errMsg });
   }
