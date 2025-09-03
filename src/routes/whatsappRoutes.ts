@@ -208,6 +208,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   const correlationId = getCorrelationId(req);
   const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
+  const token_source = 'bsp_permanent';
 
   if (!restaurant_id) {
     res.status(400).json({ success: false, error: 'restaurant_id é obrigatório' });
@@ -226,7 +227,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       .maybeSingle();
 
     const oauthToken = tokenRow.data;
-    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || oauthToken?.access_token || '';
+    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
 
     if (!graphToken) {
       res.status(400).json({ success: false, error: 'Token não encontrado para configurar WhatsApp' });
@@ -373,6 +374,13 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     // If unclaimed hint appears here, respond with claim_required
     if (/not\s*claimed|not\s*found/i.test(String(errMsg))) {
       res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required' } });
+      return;
+    }
+    // Handle invalid OAuth token error specifically
+    if (error?.response?.data?.error?.code === 190) { // Graph API error code for invalid token
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: 'Invalid OAuth access token', details: { token_source, original_error: error?.response?.data?.error } }, 'Setup error: Invalid OAuth access token');
+      await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: 'Invalid OAuth access token', details: { token_source, http_status: status } });
+      res.status(401).json({ status: "error", action: "retry_with_bsp", message: "Invalid OAuth access token" });
       return;
     }
     logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: error?.response?.data }, 'Setup error');
