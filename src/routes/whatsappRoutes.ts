@@ -340,9 +340,11 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
 
     res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: 'connected' } });
   } catch (error: any) {
-    logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: error?.message }, 'Setup error');
+    const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
+    const status = error?.response?.status || 500
+    logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: error?.response?.data }, 'Setup error');
     await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: error?.message });
-    res.status(500).json({ success: false, error: 'Erro ao configurar WhatsApp' });
+    res.status(500).json({ success: false, error: errMsg });
   }
 });
 

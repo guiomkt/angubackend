@@ -407,10 +407,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // CORS Configuration - Hardcoded para produção
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-    // Permitir requisições sem origin (como mobile apps ou Postman)
     if (!origin) return callback(null, true);
-    
-    // Configuração de CORS hardcoded para funcionar imediatamente
     const allowedOrigins = [
       'http://localhost:5173', 
       'http://localhost:3000', 
@@ -421,18 +418,9 @@ const corsOptions = {
       'https://www.angu.ai',
       'https://api.angu.ai'
     ];
-    
-    // Log para debug
-    console.log(`🌍 CORS: Origin ${origin} solicitando acesso`);
-    console.log(`✅ CORS: Origins permitidos: ${allowedOrigins.join(', ')}`);
-    
     if (allowedOrigins.includes(origin)) {
-      console.log(`✅ CORS: Origin ${origin} permitida`);
       callback(null, true);
     } else {
-      console.log(`🚫 CORS: Origin ${origin} não permitida`);
-      // Permitir todas as origens para desenvolvimento
-      console.log(`🔄 CORS: Permitindo origin ${origin} para desenvolvimento`);
       callback(null, true);
     }
   },
@@ -554,11 +542,6 @@ app.use(errorHandler);
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📚 API Documentation available at https://angubackend-production.up.railway.app/api-docs`);
-  console.log(`🏥 Health check (Railway): https://angubackend-production.up.railway.app/health`);
-  console.log(`🔍 Health check (Detalhado): https://angubackend-production.up.railway.app/health/detailed`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✅ CORS configurado para: localhost:5173, localhost:3000, cheffguio.com, angubackend-production.up.railway.app, angu.ai, api.angu.ai`);
 });
 
 export default app; 
