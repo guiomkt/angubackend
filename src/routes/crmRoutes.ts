@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
 import { supabase } from '../config/database'
 
 const router = Router()
@@ -33,7 +33,7 @@ const router = Router()
  */
 
 // List stages
-router.get('/stages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/stages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { data, error } = await supabase
@@ -105,7 +105,7 @@ router.get('/stages', authenticateToken, requireRestaurant, async (req: Authenti
  *         description: Erro interno do servidor
  */
 // Create stage
-router.post('/stages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/stages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const payload = { ...req.body, restaurant_id: restaurantId }
@@ -159,7 +159,7 @@ router.post('/stages', authenticateToken, requireRestaurant, async (req: Authent
  *         description: Erro interno do servidor
  */
 // Update stage
-router.put('/stages/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/stages/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     const { data, error } = await supabase
@@ -202,7 +202,7 @@ router.put('/stages/:id', authenticateToken, requireRestaurant, async (req: Auth
  *         description: Erro interno do servidor
  */
 // Delete stage
-router.delete('/stages/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/stages/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     // Ensure no cards in this stage
@@ -239,7 +239,7 @@ router.delete('/stages/:id', authenticateToken, requireRestaurant, async (req: A
  *         description: Erro interno do servidor
  */
 // Create default stages if none
-router.post('/stages/defaults', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/stages/defaults', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { count, error: countError } = await supabase
@@ -297,7 +297,7 @@ router.post('/stages/defaults', authenticateToken, requireRestaurant, async (req
  *         description: Erro interno do servidor
  */
 // List tags
-router.get('/tags', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/tags', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { data, error } = await supabase
@@ -355,7 +355,7 @@ router.get('/tags', authenticateToken, requireRestaurant, async (req: Authentica
  *         description: Erro interno do servidor
  */
 // Create tag
-router.post('/tags', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/tags', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const payload = { ...req.body, restaurant_id: restaurantId }
@@ -392,7 +392,7 @@ router.post('/tags', authenticateToken, requireRestaurant, async (req: Authentic
  *         description: Erro interno do servidor
  */
 // Delete tag
-router.delete('/tags/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/tags/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     // Remove relations first
@@ -434,7 +434,7 @@ router.delete('/tags/:id', authenticateToken, requireRestaurant, async (req: Aut
  *         description: Erro interno do servidor
  */
 // List cards with details
-router.get('/cards', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/cards', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { data: cards, error: cardsError } = await supabase
@@ -561,7 +561,7 @@ router.get('/cards', authenticateToken, requireRestaurant, async (req: Authentic
  *         description: Erro interno do servidor
  */
 // Create card
-router.post('/cards', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/cards', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { tag_ids, ...card } = req.body
@@ -626,7 +626,7 @@ router.post('/cards', authenticateToken, requireRestaurant, async (req: Authenti
  *         description: Erro interno do servidor
  */
 // Update card
-router.put('/cards/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/cards/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     const { tag_ids, ...cardData } = req.body
@@ -678,7 +678,7 @@ router.put('/cards/:id', authenticateToken, requireRestaurant, async (req: Authe
  *         description: Erro interno do servidor
  */
 // Delete card
-router.delete('/cards/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/cards/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     await supabase.from('crm_card_tag_relations').delete().eq('card_id', id)
@@ -748,7 +748,7 @@ router.delete('/cards/:id', authenticateToken, requireRestaurant, async (req: Au
  *         description: Erro interno do servidor
  */
 // Add activity to card
-router.post('/cards/:id/activities', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/cards/:id/activities', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params
     const payload = { ...req.body, card_id: id }

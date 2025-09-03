@@ -1,17 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
+import { createError } from './errorHandler';
 import { AuthService } from '../services/authService';
 import restaurantService from '../services/restaurantService';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
+    email: string;
+    role: string;
+    iat?: number;
+    exp?: number;
     restaurant_id?: string;
-    iat: number;
-    exp: number;
   };
 }
 
-export const authenticateToken = async (
+export const authenticate = async (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
@@ -34,8 +37,8 @@ export const authenticateToken = async (
       let restaurant_id: string | undefined = undefined;
       try {
         const result = await restaurantService.getRestaurantByUserId(decoded.id);
-        if (result && result.data && result.data.id) {
-          restaurant_id = result.data.id;
+        if (result && result.id) {
+          restaurant_id = result.id;
         }
       } catch (e) {
         // Ignorar erro ao buscar restaurante

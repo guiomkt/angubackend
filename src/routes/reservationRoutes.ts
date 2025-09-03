@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import reservationController from '../controllers/reservationController';
-import { authenticateToken, requireRestaurant } from '../middleware/auth';
+import { authenticate, requireRestaurant } from '../middleware/auth';
 import { validate, reservationSchema } from '../middleware/validation';
 
 const router = Router();
@@ -159,7 +159,7 @@ const router = Router();
  *       403:
  *         description: Restaurant access required
  */
-router.get('/', authenticateToken, requireRestaurant, reservationController.getReservations);
+router.get('/', authenticate, requireRestaurant, reservationController.getReservations);
 
 /**
  * @swagger
@@ -188,7 +188,7 @@ router.get('/', authenticateToken, requireRestaurant, reservationController.getR
  *       403:
  *         description: Restaurant access required
  */
-router.get('/today', authenticateToken, requireRestaurant, reservationController.getTodayReservations);
+router.get('/today', authenticate, requireRestaurant, reservationController.getTodayReservations);
 
 /**
  * @swagger
@@ -224,7 +224,7 @@ router.get('/today', authenticateToken, requireRestaurant, reservationController
  *       403:
  *         description: Restaurant access required
  */
-router.get('/upcoming', authenticateToken, requireRestaurant, reservationController.getUpcomingReservations);
+router.get('/upcoming', authenticate, requireRestaurant, reservationController.getUpcomingReservations);
 
 /**
  * @swagger
@@ -257,7 +257,7 @@ router.get('/upcoming', authenticateToken, requireRestaurant, reservationControl
  *       404:
  *         description: Reservation not found
  */
-router.get('/:id', authenticateToken, reservationController.getReservationById);
+router.get('/:id', authenticate, reservationController.getReservationById);
 
 /**
  * @swagger
@@ -331,7 +331,7 @@ router.get('/:id', authenticateToken, reservationController.getReservationById);
  *       409:
  *         description: Table conflict
  */
-router.post('/', authenticateToken, requireRestaurant, validate(reservationSchema), reservationController.createReservation);
+router.post('/', authenticate, requireRestaurant, validate(reservationSchema), reservationController.createReservation);
 
 /**
  * @swagger
@@ -403,7 +403,7 @@ router.post('/', authenticateToken, requireRestaurant, validate(reservationSchem
  *       404:
  *         description: Reservation not found
  */
-router.put('/:id', authenticateToken, validate(reservationSchema), reservationController.updateReservation);
+router.put('/:id', authenticate, validate(reservationSchema), reservationController.updateReservation);
 
 /**
  * @swagger
@@ -453,7 +453,7 @@ router.put('/:id', authenticateToken, validate(reservationSchema), reservationCo
  *       404:
  *         description: Reservation not found
  */
-router.patch('/:id/status', authenticateToken, reservationController.updateReservationStatus);
+router.patch('/:id/status', authenticate, reservationController.updateReservationStatus);
 
 /**
  * @swagger
@@ -486,6 +486,6 @@ router.patch('/:id/status', authenticateToken, reservationController.updateReser
  *       404:
  *         description: Reservation not found
  */
-router.delete('/:id', authenticateToken, reservationController.deleteReservation);
+router.delete('/:id', authenticate, reservationController.deleteReservation);
 
 export default router; 

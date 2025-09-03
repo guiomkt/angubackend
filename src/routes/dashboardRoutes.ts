@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../config/database';
 
 const router = Router();
@@ -65,7 +65,7 @@ const router = Router();
  *                 data:
  *                   $ref: '#/components/schemas/DashboardStats'
  */
-router.get('/stats', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/stats', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const today = new Date().toISOString().split('T')[0];
@@ -219,7 +219,7 @@ return res.status(500).json({
  *       200:
  *         description: Recent activity
  */
-router.get('/recent-activity', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/recent-activity', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const limit = parseInt(req.query.limit as string) || 10;
@@ -307,7 +307,7 @@ return res.status(500).json({
  *       200:
  *         description: Chart data
  */
-router.get('/charts', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/charts', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const period = req.query.period as string || 'week';

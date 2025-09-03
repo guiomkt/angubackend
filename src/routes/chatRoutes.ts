@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../config/database';
 
 const router = Router();
@@ -175,7 +175,7 @@ const router = Router();
  *       403:
  *         description: Restaurant access required
  */
-router.get('/contacts', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/contacts', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { status, customer_type, page = 1, limit = 20 } = req.query;
@@ -258,7 +258,7 @@ return res.json({
  *       403:
  *         description: Restaurant access required
  */
-router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/contacts/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -349,7 +349,7 @@ router.get('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  *       403:
  *         description: Restaurant access required
  */
-router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/contacts/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -445,7 +445,7 @@ router.put('/contacts/:id', authenticateToken, requireRestaurant, async (req: Au
  *       403:
  *         description: Restaurant access required
  */
-router.get('/contacts/:id/messages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/contacts/:id/messages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -556,7 +556,7 @@ return res.json({
  *       403:
  *         description: Restaurant access required
  */
-router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/contacts/:id/messages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -645,7 +645,7 @@ router.post('/contacts/:id/messages', authenticateToken, requireRestaurant, asyn
  *       403:
  *         description: Restaurant access required
  */
-router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.patch('/messages/:id/read', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -712,7 +712,7 @@ router.patch('/messages/:id/read', authenticateToken, requireRestaurant, async (
  *       403:
  *         description: Restaurant access required
  */
-router.get('/analytics', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/analytics', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const date = req.query.date as string || new Date().toISOString().split('T')[0];

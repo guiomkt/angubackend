@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant } from '../middleware/auth';
+import { authenticate, requireRestaurant } from '../middleware/auth';
 import { supabase } from '../config/database';
 
 const router = Router();
@@ -438,7 +438,7 @@ const router = Router();
  *       500:
  *         description: Internal server error
  */
-router.get('/events', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/events', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
 
@@ -507,7 +507,7 @@ router.get('/events', authenticateToken, requireRestaurant, async (req: any, res
  *       500:
  *         description: Internal server error
  */
-router.get('/blocked-dates', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/blocked-dates', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { data, error } = await supabase
@@ -601,7 +601,7 @@ router.get('/blocked-dates', authenticateToken, requireRestaurant, async (req: a
  *       500:
  *         description: Internal server error
  */
-router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.post('/blocked-dates', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { area_id, init_date, end_date, init_time, end_time, reason, is_full_day = true } = req.body;
@@ -713,7 +713,7 @@ router.post('/blocked-dates', authenticateToken, requireRestaurant, async (req: 
  *       500:
  *         description: Internal server error
  */
-router.put('/blocked-dates/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.put('/blocked-dates/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const { area_id, init_date, end_date, init_time, end_time, reason, is_full_day = true } = req.body;
@@ -790,7 +790,7 @@ router.put('/blocked-dates/:id', authenticateToken, requireRestaurant, async (re
  *       500:
  *         description: Internal server error
  */
-router.delete('/blocked-dates/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.delete('/blocked-dates/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const { error } = await supabase
@@ -850,7 +850,7 @@ router.delete('/blocked-dates/:id', authenticateToken, requireRestaurant, async 
  *       500:
  *         description: Internal server error
  */
-router.get('/bonifications', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/bonifications', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { data, error } = await supabase
@@ -901,7 +901,7 @@ router.get('/bonifications', authenticateToken, requireRestaurant, async (req: a
  *       500:
  *         description: Internal server error
  */
-router.post('/bonifications', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.post('/bonifications', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const payload = { ...req.body, restaurant_id: restaurantId };
@@ -963,7 +963,7 @@ router.post('/bonifications', authenticateToken, requireRestaurant, async (req: 
  *       500:
  *         description: Internal server error
  */
-router.put('/bonifications/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.put('/bonifications/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -1019,7 +1019,7 @@ router.put('/bonifications/:id', authenticateToken, requireRestaurant, async (re
  *       500:
  *         description: Internal server error
  */
-router.delete('/bonifications/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.delete('/bonifications/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -1065,7 +1065,7 @@ router.delete('/bonifications/:id', authenticateToken, requireRestaurant, async 
  *       500:
  *         description: Internal server error
  */
-router.get('/events/list', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/events/list', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     
@@ -1129,7 +1129,7 @@ router.get('/events/list', authenticateToken, requireRestaurant, async (req: any
  *       500:
  *         description: Internal server error
  */
-router.post('/events', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.post('/events', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     
@@ -1222,7 +1222,7 @@ router.post('/events', authenticateToken, requireRestaurant, async (req: any, re
  *       500:
  *         description: Internal server error
  */
-router.put('/events/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.put('/events/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -1309,7 +1309,7 @@ router.put('/events/:id', authenticateToken, requireRestaurant, async (req: any,
  *       500:
  *         description: Internal server error
  */
-router.delete('/events/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.delete('/events/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -1355,7 +1355,7 @@ router.delete('/events/:id', authenticateToken, requireRestaurant, async (req: a
  *       500:
  *         description: Internal server error
  */
-router.get('/events-exclusive', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/events-exclusive', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { data, error } = await supabase
@@ -1406,7 +1406,7 @@ router.get('/events-exclusive', authenticateToken, requireRestaurant, async (req
  *       500:
  *         description: Internal server error
  */
-router.post('/events-exclusive', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.post('/events-exclusive', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const payload = { ...req.body, restaurant_id: restaurantId };
@@ -1468,7 +1468,7 @@ router.post('/events-exclusive', authenticateToken, requireRestaurant, async (re
  *       500:
  *         description: Internal server error
  */
-router.put('/events-exclusive/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.put('/events-exclusive/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -1524,7 +1524,7 @@ router.put('/events-exclusive/:id', authenticateToken, requireRestaurant, async 
  *       500:
  *         description: Internal server error
  */
-router.delete('/events-exclusive/:id', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.delete('/events-exclusive/:id', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;

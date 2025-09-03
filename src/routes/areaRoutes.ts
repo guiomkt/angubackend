@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AreaController } from '../controllers/areaController';
 import { AreaService } from '../services/areaService';
-import { authenticateToken, requireRestaurant } from '../middleware/auth';
+import { authenticate, requireRestaurant } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { areaSchema, areaUpdateSchema } from '../middleware/validation';
 
@@ -48,7 +48,7 @@ const router = Router();
  */
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Get all areas for a restaurant (using authenticated user's restaurant)
 router.get('/my', requireRestaurant, async (req: any, res) => {

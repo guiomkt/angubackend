@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import restaurantController from '../controllers/restaurantController';
-import { authenticateToken, requireRestaurant } from '../middleware/auth';
+import { authenticate, requireRestaurant } from '../middleware/auth';
 import { validate, restaurantSchema, restaurantSchemas } from '../middleware/validation';
 import multer from 'multer';
 
@@ -163,7 +163,7 @@ router.get('/', restaurantController.getAllRestaurants);
  *       403:
  *         description: Restaurant access required
  */
-router.get('/my', authenticateToken, restaurantController.getMyRestaurant);
+router.get('/my', authenticate, restaurantController.getCurrentUserRestaurant);
 
 /**
  * @swagger
@@ -296,7 +296,7 @@ router.get('/:id', restaurantController.getRestaurantById);
  *       401:
  *         description: Unauthorized
  */
-router.post('/', authenticateToken, validate(restaurantSchema), restaurantController.createRestaurant);
+router.post('/', authenticate, validate(restaurantSchema), restaurantController.createRestaurant);
 
 /**
  * @swagger
@@ -377,7 +377,7 @@ router.post('/', authenticateToken, validate(restaurantSchema), restaurantContro
  *       404:
  *         description: Restaurant not found
  */
-router.put('/:id', authenticateToken, requireRestaurant, validate(restaurantSchemas.update), restaurantController.updateRestaurant);
+router.put('/:id', authenticate, requireRestaurant, validate(restaurantSchemas.update), restaurantController.updateRestaurant);
 
 /**
  * @swagger
@@ -430,7 +430,7 @@ router.put('/:id', authenticateToken, requireRestaurant, validate(restaurantSche
  *       403:
  *         description: Forbidden
  */
-router.patch('/:id/onboarding', authenticateToken, requireRestaurant, restaurantController.updateOnboardingStatus);
+router.patch('/:id/onboarding', authenticate, requireRestaurant, restaurantController.updateOnboardingStatus);
 
 /**
  * @swagger
@@ -467,10 +467,10 @@ router.patch('/:id/onboarding', authenticateToken, requireRestaurant, restaurant
  *       404:
  *         description: Restaurant not found
  */
-router.delete('/:id', authenticateToken, requireRestaurant, restaurantController.deleteRestaurant);
+router.delete('/:id', authenticate, requireRestaurant, restaurantController.deleteRestaurant);
 
 // Rota de teste simples
-router.get('/settings/test', authenticateToken, requireRestaurant, async (req: any, res) => {
+router.get('/settings/test', authenticate, requireRestaurant, async (req: any, res) => {
   try {
     console.log('Rota de teste /settings/test chamada');
     console.log('User na rota:', req.user);
@@ -529,7 +529,7 @@ router.get('/settings/test', authenticateToken, requireRestaurant, async (req: a
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/settings', authenticateToken, requireRestaurant, async (req: any, res, next) => {
+router.get('/settings', authenticate, requireRestaurant, async (req: any, res, next) => {
   try {
     return await restaurantController.getRestaurantSettings(req, res, next);
   } catch (error) {
@@ -572,7 +572,7 @@ router.get('/settings', authenticateToken, requireRestaurant, async (req: any, r
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings', authenticateToken, requireRestaurant, restaurantController.updateRestaurantSettings);
+router.put('/settings', authenticate, requireRestaurant, restaurantController.updateRestaurantSettings);
 
 /**
  * @swagger
@@ -617,6 +617,6 @@ router.put('/settings', authenticateToken, requireRestaurant, restaurantControll
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/logo', authenticateToken, requireRestaurant, upload.single('file'), restaurantController.uploadRestaurantLogo);
+router.post('/logo', authenticate, requireRestaurant, upload.single('file'), restaurantController.uploadRestaurantLogo);
 
 export default router; 

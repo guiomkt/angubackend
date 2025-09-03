@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import notificationService from '../services/notificationService';
 
 const router = Router();
@@ -29,7 +29,7 @@ const router = Router();
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/settings', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/settings', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
 
@@ -94,7 +94,7 @@ router.get('/settings', authenticateToken, requireRestaurant, async (req: Authen
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/settings', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
 
@@ -125,7 +125,7 @@ router.put('/settings', authenticateToken, requireRestaurant, async (req: Authen
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/settings/default', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/settings/default', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
 
@@ -177,7 +177,7 @@ router.post('/settings/default', authenticateToken, requireRestaurant, async (re
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings/toggle/:type', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/settings/toggle/:type', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { type } = req.params;
@@ -229,7 +229,7 @@ router.put('/settings/toggle/:type', authenticateToken, requireRestaurant, async
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings/timing', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/settings/timing', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
 

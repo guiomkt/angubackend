@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../config/database';
 
 const router = Router();
@@ -166,7 +166,7 @@ const router = Router();
  *       403:
  *         description: Restaurant access required
  */
-router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { status, priority, page = 1, limit = 20 } = req.query;
@@ -249,7 +249,7 @@ return res.json({
  *       403:
  *         description: Restaurant access required
  */
-router.get('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -343,7 +343,7 @@ router.get('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  *       403:
  *         description: Restaurant access required
  */
-router.post('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const {
@@ -464,7 +464,7 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
  *       403:
  *         description: Restaurant access required
  */
-router.put('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -554,7 +554,7 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
  *       403:
  *         description: Restaurant access required
  */
-router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.patch('/:id/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -635,7 +635,7 @@ router.patch('/:id/status', authenticateToken, requireRestaurant, async (req: Au
  *       403:
  *         description: Restaurant access required
  */
-router.delete('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -668,7 +668,7 @@ router.delete('/:id', authenticateToken, requireRestaurant, async (req: Authenti
 /**
  * Waiting List Config endpoints
  */
-router.get('/config', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/config', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { data, error } = await supabase
@@ -687,7 +687,7 @@ router.get('/config', authenticateToken, requireRestaurant, async (req: Authenti
   }
 });
 
-router.post('/config', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/config', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const payload = { ...req.body, restaurant_id: restaurantId };

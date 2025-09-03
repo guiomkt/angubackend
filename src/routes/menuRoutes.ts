@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { MenuController } from '../controllers/menuController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { 
   menuCategorySchema, 
@@ -88,7 +88,7 @@ const router = Router();
  */
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Categories routes
 router.get('/categories', MenuController.getCategories);

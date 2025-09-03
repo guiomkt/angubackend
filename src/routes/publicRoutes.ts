@@ -50,26 +50,24 @@ router.get('/restaurant/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Restaurant ID is required' });
     }
 
-    const restaurantResponse = await restaurantService.getRestaurantById(id);
-    
-    if (!restaurantResponse.success || !restaurantResponse.data) {
+    try {
+      const restaurant = await restaurantService.getRestaurantById(id);
+      
+      // Return only public information
+      const publicInfo = {
+        id: restaurant.id,
+        name: restaurant.name,
+        description: restaurant.description,
+        address: restaurant.address,
+        phone: restaurant.phone,
+        email: restaurant.email,
+        logo_url: restaurant.logo_url
+      };
+
+      return res.json(publicInfo);
+    } catch (error) {
       return res.status(404).json({ error: 'Restaurant not found' });
     }
-    
-    const restaurant = restaurantResponse.data;
-
-    // Return only public information
-    const publicInfo = {
-      id: restaurant.id,
-      name: restaurant.name,
-      description: restaurant.description,
-      address: restaurant.address,
-      phone: restaurant.phone,
-      email: restaurant.email,
-      logo_url: restaurant.logo_url
-    };
-
-    return res.json(publicInfo);
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
   }

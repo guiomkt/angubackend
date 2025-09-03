@@ -51,7 +51,6 @@ export class NotificationService {
       const defaultSettings: NotificationSettings['settings'] = {
         email_notifications: true,
         sms_notifications: false,
-        whatsapp_notifications: true,
         push_notifications: false,
         reservation_confirmation: true,
         reservation_reminder: true,

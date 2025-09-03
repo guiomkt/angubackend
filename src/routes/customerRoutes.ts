@@ -1,34 +1,34 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { CustomerController } from '../controllers/customerController';
 
 const router = Router();
 
 // Rota para buscar todos os clientes com paginação e filtros
-router.get('/', authenticateToken, requireRestaurant, CustomerController.getCustomers);
+router.get('/', authenticate, requireRestaurant, CustomerController.getCustomers);
 
 // Rota para buscar estatísticas dos clientes
-router.get('/stats/overview', authenticateToken, requireRestaurant, CustomerController.getCustomerStats);
+router.get('/stats/overview', authenticate, requireRestaurant, CustomerController.getCustomerStats);
 
 // Rota para buscar clientes de hoje (mantida para compatibilidade)
-router.get('/today', authenticateToken, requireRestaurant, CustomerController.getTodayCustomers);
+router.get('/today', authenticate, requireRestaurant, CustomerController.getTodayCustomers);
 
 // Rota para buscar clientes de ontem (mantida para compatibilidade)
-router.get('/yesterday', authenticateToken, requireRestaurant, CustomerController.getYesterdayCustomers);
+router.get('/yesterday', authenticate, requireRestaurant, CustomerController.getYesterdayCustomers);
 
 // Rota para buscar cliente por ID (deve vir depois das rotas específicas)
-router.get('/:id', authenticateToken, requireRestaurant, CustomerController.getCustomerById);
+router.get('/:id', authenticate, requireRestaurant, CustomerController.getCustomerById);
 
 // Rota para criar novo cliente
-router.post('/', authenticateToken, requireRestaurant, CustomerController.createCustomer);
+router.post('/', authenticate, requireRestaurant, CustomerController.createCustomer);
 
 // Rota para atualizar cliente
-router.put('/:id', authenticateToken, requireRestaurant, CustomerController.updateCustomer);
+router.put('/:id', authenticate, requireRestaurant, CustomerController.updateCustomer);
 
 // Rota para deletar cliente
-router.delete('/:id', authenticateToken, requireRestaurant, CustomerController.deleteCustomer);
+router.delete('/:id', authenticate, requireRestaurant, CustomerController.deleteCustomer);
 
 // Rota para atualizar status do cliente
-router.patch('/:id/status', authenticateToken, requireRestaurant, CustomerController.updateCustomerStatus);
+router.patch('/:id/status', authenticate, requireRestaurant, CustomerController.updateCustomerStatus);
 
 export default router; 

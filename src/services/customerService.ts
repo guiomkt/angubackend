@@ -267,7 +267,7 @@ export class CustomerService {
   static async bulkUpdateTags(customerIds: string[], tags: string[]): Promise<void> {
     try {
       const { error } = await supabase
-        .from('whatsapp_contacts')
+        .from('chat_contacts')
         .update({
           tags,
           updated_at: new Date().toISOString()
@@ -288,7 +288,7 @@ export class CustomerService {
   static async getCustomersByTags(restaurantId: string, tags: string[]): Promise<ChatContact[]> {
     try {
       const { data, error } = await supabase
-        .from('whatsapp_contacts')
+        .from('chat_contacts')
         .select('*')
         .eq('restaurant_id', restaurantId)
         .overlaps('tags', tags);

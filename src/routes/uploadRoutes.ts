@@ -1,14 +1,14 @@
 import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
 import { supabase } from '../config/database'
 
 const router = Router()
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } })
 
-router.post('/logo', authenticateToken, requireRestaurant, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+router.post('/logo', authenticate, requireRestaurant, upload.single('file'), async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     if (!req.file) {
@@ -33,7 +33,7 @@ router.post('/logo', authenticateToken, requireRestaurant, upload.single('file')
   }
 })
 
-router.delete('/logo', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/logo', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { path: objectPath } = req.body as { path?: string }
     if (!objectPath) {
@@ -49,7 +49,7 @@ router.delete('/logo', authenticateToken, requireRestaurant, async (req: Authent
   }
 })
 
-router.post('/chat-media', authenticateToken, requireRestaurant, upload.single('file'), async (req: AuthenticatedRequest, res) => {
+router.post('/chat-media', authenticate, requireRestaurant, upload.single('file'), async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     if (!req.file) {
