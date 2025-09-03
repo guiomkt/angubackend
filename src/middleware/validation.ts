@@ -337,19 +337,7 @@ export const authSchemas = {
   })
 };
 
-// WhatsApp schemas
-export const whatsappProfileSchema = Joi.object({
-  restaurantId: Joi.string().uuid().required(),
-  profile: Joi.object({
-    about: Joi.string().max(139).optional(),
-    description: Joi.string().max(512).optional(),
-    email: Joi.string().email().optional(),
-    address: Joi.string().max(256).optional(),
-    websites: Joi.array().items(Joi.string().uri()).optional()
-  })
-    .min(1)
-    .required()
-});
+
 
 export const registerTemplateSchema = Joi.object({
   restaurantId: Joi.string().uuid().required(),

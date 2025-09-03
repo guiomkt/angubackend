@@ -518,8 +518,7 @@ router.get('/settings/test', authenticate, requireRestaurant, async (req: any, r
  *                       $ref: '#/components/schemas/AISettings'
  *                     notification_settings:
  *                       $ref: '#/components/schemas/NotificationSettings'
- *                     whatsapp_account_info:
- *                       $ref: '#/components/schemas/WhatsAppAccountInfo'
+
  *                     users:
  *                       type: array
  *                       items:
@@ -562,8 +561,7 @@ router.get('/settings', authenticate, requireRestaurant, async (req: any, res, n
  *                 $ref: '#/components/schemas/AISettings'
  *               notification_settings:
  *                 $ref: '#/components/schemas/NotificationSettings'
- *               whatsapp_account_info:
- *                 $ref: '#/components/schemas/WhatsAppAccountInfo'
+
  *     responses:
  *       200:
  *         description: Configurações atualizadas com sucesso

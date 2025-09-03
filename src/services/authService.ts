@@ -514,7 +514,7 @@ export class AuthService {
       const stateData = {
         userId: user.data.id,
         restaurantId,
-        redirectUrl: `${frontendUrl}/whatsapp/callback`,
+        redirectUrl: `${frontendUrl}/dashboard`,
         timestamp: Date.now()
       };
 
@@ -558,8 +558,8 @@ export class AuthService {
       restaurantId,
       // IMPORTANTE: Em produção, SEMPRE usar a URL correta
               redirectUrl: isProduction 
-          ? 'https://www.angu.ai/whatsapp/callback'
-          : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp/callback`,
+          ? 'https://www.angu.ai/dashboard'
+          : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`,
       timestamp: Date.now()
     };
 
@@ -569,7 +569,7 @@ export class AuthService {
       client_id: clientId!,
       redirect_uri: redirectUri,
       state: encodedState,
-      scope: 'whatsapp_business_management,whatsapp_business_messaging,pages_manage_posts,ads_management'
+      scope: 'pages_manage_posts,ads_management'
     });
 
     const authUrl = `${META_OAUTH_DIALOG_URL}?${params.toString()}`;
@@ -589,8 +589,8 @@ export class AuthService {
       restaurantId,
       // IMPORTANTE: Em produção, SEMPRE usar a URL correta
       redirectUrl: isProduction 
-        ? 'https://www.angu.ai/whatsapp'
-        : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/whatsapp`,
+        ? 'https://www.angu.ai/dashboard'
+        : `${process.env.FRONTEND_URL || 'http://localhost:5173'}/dashboard`,
       timestamp: Date.now()
     };
 
