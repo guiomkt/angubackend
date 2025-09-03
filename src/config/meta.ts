@@ -5,13 +5,10 @@
 
 export const META_CONFIG = {
   API_VERSION: process.env.META_API_VERSION || 'v22.0',
-  GRAPH_API_BASE: process.env.WHATSAPP_API_URL || 'https://graph.facebook.com',
+  GRAPH_API_BASE: process.env.META_API_URL || 'https://graph.facebook.com',
   OAUTH_DIALOG_BASE: 'https://www.facebook.com',
-  PHONE_REGISTRATION_PIN: process.env.PHONE_REGISTRATION_PIN || '000000',
   OAUTH_SCOPES: process.env.OAUTH_SCOPES || [
     'business_management',
-    'whatsapp_business_management',
-    'whatsapp_business_messaging',
     'pages_show_list',
     'pages_read_engagement'
   ].join(',')

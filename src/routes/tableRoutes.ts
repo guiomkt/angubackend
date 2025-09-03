@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { TableController } from '../controllers/tableController';
-import { authenticateToken } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 import { validate } from '../middleware/validation';
 import { 
   tableSchema, 
@@ -99,7 +99,7 @@ const router = Router();
  */
 
 // Apply authentication middleware to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Get all tables for a restaurant
 router.get('/', TableController.getTables);

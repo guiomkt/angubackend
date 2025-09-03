@@ -1,22 +1,85 @@
 import { supabase } from '../config/database';
-import { Restaurant, ApiResponse, PaginatedResponse, RestaurantSettingsResponse, AISettings, NotificationSettings, WhatsAppAccountInfo } from '../types';
+import { Restaurant, ApiResponse, PaginatedResponse, RestaurantSettingsResponse, AISettings, NotificationSettings } from '../types';
 import { createError } from '../middleware/errorHandler';
 
-export class RestaurantService {
-  async getAllRestaurants(page: number = 1, limit: number = 10): Promise<PaginatedResponse<Restaurant>> {
+class RestaurantService {
+  async createRestaurant(restaurantData: Partial<Restaurant>): Promise<Restaurant> {
     try {
-      const offset = (page - 1) * limit;
-
-      const { data, error, count } = await supabase
+      const { data, error } = await supabase
         .from('restaurants')
-        .select('*', { count: 'exact' })
+        .insert([{ ...restaurantData, created_at: new Date().toISOString() }])
+        .select()
+        .single();
+
+      if (error) throw createError(error.message, 400);
+      if (!data) throw createError('Failed to create restaurant', 500);
+
+      return data;
+    } catch (error) {
+      throw createError(`Failed to create restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getRestaurantById(id: string): Promise<Restaurant> {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error) throw createError(error.message, 400);
+      if (!data) throw createError('Restaurant not found', 404);
+
+      return data;
+    } catch (error) {
+      throw createError(`Failed to fetch restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getRestaurantByUserId(userId: string): Promise<Restaurant | null> {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No restaurant found for this user
+          return null;
+        }
+        throw createError(error.message, 400);
+      }
+
+      return data;
+    } catch (error) {
+      throw createError(`Failed to fetch restaurant by user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getAllRestaurants(
+    page: number = 1,
+    limit: number = 10,
+    search?: string
+  ): Promise<PaginatedResponse<Restaurant>> {
+    try {
+      let query = supabase.from('restaurants').select('*', { count: 'exact' });
+
+      if (search) {
+        query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
+      }
+
+      const offset = (page - 1) * limit;
+      
+      const { data, error, count } = await query
         .range(offset, offset + limit - 1)
-        .order('created_at', { ascending: false });
+        .order('name');
 
       if (error) throw createError(error.message, 400);
 
-      const total = count || 0;
-      const totalPages = Math.ceil(total / limit);
+      const totalPages = Math.ceil((count || 0) / limit);
 
       return {
         success: true,
@@ -24,7 +87,7 @@ export class RestaurantService {
         pagination: {
           page,
           limit,
-          total,
+          total: count || 0,
           totalPages
         }
       };
@@ -33,65 +96,7 @@ export class RestaurantService {
     }
   }
 
-  async getRestaurantById(id: string): Promise<ApiResponse<Restaurant>> {
-    try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) throw createError(error.message, 404);
-
-      return {
-        success: true,
-        data
-      };
-    } catch (error) {
-      throw createError(`Failed to fetch restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async getRestaurantByUserId(userId: string): Promise<ApiResponse<Restaurant>> {
-    try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-
-      if (error) throw createError(error.message, 404);
-
-      return {
-        success: true,
-        data
-      };
-    } catch (error) {
-      throw createError(`Failed to fetch restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async createRestaurant(restaurantData: Partial<Restaurant>): Promise<ApiResponse<Restaurant>> {
-    try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .insert([restaurantData])
-        .select()
-        .single();
-
-      if (error) throw createError(error.message, 400);
-
-      return {
-        success: true,
-        data,
-        message: 'Restaurant created successfully'
-      };
-    } catch (error) {
-      throw createError(`Failed to create restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  async updateRestaurant(id: string, restaurantData: Partial<Restaurant>): Promise<ApiResponse<Restaurant>> {
+  async updateRestaurant(id: string, restaurantData: Partial<Restaurant>): Promise<Restaurant> {
     try {
       const { data, error } = await supabase
         .from('restaurants')
@@ -100,21 +105,16 @@ export class RestaurantService {
         .select()
         .single();
 
-      if (error) {
-        throw createError(error.message, 400)
-      }
+      if (error) throw createError(error.message, 400);
+      if (!data) throw createError('Restaurant not found', 404);
 
-      return {
-        success: true,
-        data,
-        message: 'Restaurant updated successfully'
-      };
+      return data;
     } catch (error) {
       throw createError(`Failed to update restaurant: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  async deleteRestaurant(id: string): Promise<ApiResponse<void>> {
+  async deleteRestaurant(id: string): Promise<ApiResponse> {
     try {
       const { error } = await supabase
         .from('restaurants')
@@ -132,43 +132,52 @@ export class RestaurantService {
     }
   }
 
-  async updateOnboardingStatus(id: string, completed: boolean, step: number): Promise<ApiResponse<Restaurant>> {
+  async getRestaurantStats(id: string): Promise<ApiResponse<any>> {
     try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .update({
-          onboarding_completed: completed,
-          onboarding_step: step,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw createError(error.message, 400);
+      // Placeholder para estatísticas (implementar conforme necessário)
+      const stats = {
+        reservations: {
+          total: 0,
+          upcoming: 0,
+          today: 0
+        },
+        tables: {
+          total: 0,
+          available: 0,
+          occupied: 0
+        },
+        revenue: {
+          today: 0,
+          weekly: 0,
+          monthly: 0
+        },
+        customers: {
+          total: 0,
+          new: 0,
+          returning: 0
+        }
+      };
 
       return {
         success: true,
-        data,
-        message: 'Onboarding status updated successfully'
+        data: stats
       };
     } catch (error) {
-      throw createError(`Failed to update onboarding status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw createError(`Failed to fetch restaurant stats: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async getRestaurantSettings(restaurantId: string): Promise<ApiResponse<RestaurantSettingsResponse>> {
     try {
       // Buscar restaurante
-      const { data: restaurant, error: restaurantError } = await supabase
+      const { data: restaurant, error } = await supabase
         .from('restaurants')
         .select('*')
         .eq('id', restaurantId)
         .single();
 
-      if (restaurantError) {
-        throw createError(restaurantError.message, 404);
-      }
+      if (error) throw createError(error.message, 400);
+      if (!restaurant) throw createError('Restaurant not found', 404);
 
       // Buscar configurações de IA (opcional)
       let aiSettings = null;
@@ -196,19 +205,6 @@ export class RestaurantService {
         // Ignorar erro, tabela pode não existir
       }
 
-      // Buscar informações do WhatsApp (opcional)
-      let whatsappAccountInfo = null;
-      try {
-        const { data: whatsappData } = await supabase
-          .from('whatsapp_account_info')
-          .select('*')
-          .eq('restaurant_id', restaurantId)
-          .maybeSingle();
-        whatsappAccountInfo = whatsappData;
-      } catch (whatsappError) {
-        // Ignorar erro, tabela pode não existir
-      }
-
       // Buscar usuários (opcional)
       let users = [];
       try {
@@ -227,7 +223,6 @@ export class RestaurantService {
           restaurant,
           ai_settings: aiSettings,
           notification_settings: notificationSettings,
-          whatsapp_account_info: whatsappAccountInfo,
           users
         }
       };
@@ -242,7 +237,6 @@ export class RestaurantService {
       restaurant?: Partial<Restaurant>;
       ai_settings?: Partial<AISettings>;
       notification_settings?: Partial<NotificationSettings>;
-      whatsapp_account_info?: Partial<WhatsAppAccountInfo>;
     }
   ): Promise<ApiResponse<RestaurantSettingsResponse>> {
     try {
@@ -277,17 +271,6 @@ export class RestaurantService {
           supabase
             .from('notification_settings')
             .upsert({ ...updates.notification_settings, restaurant_id: restaurantId, updated_at: new Date().toISOString() })
-            .select()
-            .single()
-        );
-      }
-
-      // Atualizar informações da conta WhatsApp
-      if (updates.whatsapp_account_info) {
-        updatesPromises.push(
-          supabase
-            .from('whatsapp_account_info')
-            .upsert({ ...updates.whatsapp_account_info, restaurant_id: restaurantId, updated_at: new Date().toISOString() })
             .select()
             .single()
         );

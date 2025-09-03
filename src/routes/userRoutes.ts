@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth';
 import { supabase } from '../config/database';
 
 const router = Router();
 
-router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const { data, error } = await supabase
@@ -19,7 +19,7 @@ router.get('/', authenticateToken, requireRestaurant, async (req: AuthenticatedR
   }
 });
 
-router.post('/', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user?.restaurant_id;
     const payload = { ...req.body, restaurant_id: restaurantId };
@@ -35,7 +35,7 @@ router.post('/', authenticateToken, requireRestaurant, async (req: Authenticated
   }
 });
 
-router.put('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;
@@ -53,7 +53,7 @@ router.put('/:id', authenticateToken, requireRestaurant, async (req: Authenticat
   }
 });
 
-router.delete('/:id', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.delete('/:id', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const restaurantId = req.user?.restaurant_id;

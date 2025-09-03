@@ -2,7 +2,7 @@ import express from 'express'
 import { AuthController } from '../controllers/authController'
 import { validate } from '../middleware/validation'
 import { authSchemas } from '../middleware/validation'
-import { authenticateToken } from '../middleware/auth'
+import { authenticate } from '../middleware/auth'
 
 const router = express.Router()
 
@@ -131,7 +131,7 @@ const router = express.Router()
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/meta/login', authenticateToken, AuthController.initiateMetaLogin)
+router.get('/meta/login', authenticate, AuthController.initiateMetaLogin)
 
 /**
  * @swagger
@@ -264,8 +264,8 @@ router.get('/meta/token', AuthController.getMetaToken)
 // Existing routes
 router.post('/register', validate(authSchemas.register), AuthController.register)
 router.post('/login', validate(authSchemas.login), AuthController.login)
-router.post('/logout', authenticateToken, AuthController.logout)
-router.get('/me', authenticateToken, AuthController.getMe)
-router.post('/refresh', authenticateToken, AuthController.refreshToken)
+router.post('/logout', authenticate, AuthController.logout)
+router.get('/me', authenticate, AuthController.getMe)
+router.post('/refresh', authenticate, AuthController.refreshToken)
 
 export default router 

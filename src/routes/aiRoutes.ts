@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { authenticateToken, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
+import { authenticate, requireRestaurant, AuthenticatedRequest } from '../middleware/auth'
 import { supabase } from '../config/database'
 
 const router = Router()
@@ -29,7 +29,7 @@ const router = Router()
  *       500:
  *         description: Erro interno do servidor
  */
-router.get('/settings', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.get('/settings', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { data, error } = await supabase.from('ai_settings').select('*').eq('restaurant_id', restaurantId).maybeSingle()
@@ -95,7 +95,7 @@ router.get('/settings', authenticateToken, requireRestaurant, async (req: Authen
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/settings', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/settings', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const payload = { ...req.body, restaurant_id: restaurantId }
@@ -140,7 +140,7 @@ router.post('/settings', authenticateToken, requireRestaurant, async (req: Authe
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings/personality', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/settings/personality', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const { personality } = req.body
@@ -206,7 +206,7 @@ router.put('/settings/personality', authenticateToken, requireRestaurant, async 
  *       500:
  *         description: Erro interno do servidor
  */
-router.put('/settings/custom', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.put('/settings/custom', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
     const customSettings = req.body
@@ -257,7 +257,7 @@ router.put('/settings/custom', authenticateToken, requireRestaurant, async (req:
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/settings/reset', authenticateToken, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+router.post('/settings/reset', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   try {
     const restaurantId = req.user!.restaurant_id
 

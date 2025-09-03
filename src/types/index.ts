@@ -260,24 +260,6 @@ export interface UserProfile extends BaseEntity {
   created_by?: string;
 }
 
-// WhatsApp types
-export interface WhatsAppCredentials {
-  id: number;
-  restaurant_id: string;
-  phone_number?: string;
-  phone_number_id?: string;
-  business_name?: string;
-  status?: string;
-  whatsapp_business_account_id?: string;
-  message_template_namespace: boolean;
-  access_token?: string;
-  webhook_status?: string;
-  disconnected_at?: string;
-  disconnect_reason?: string;
-  created_at: string;
-  updated_at?: string;
-}
-
 // API Response types
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -316,7 +298,6 @@ export interface NotificationSettings extends BaseEntity {
   settings: {
     email_notifications?: boolean;
     sms_notifications?: boolean;
-    whatsapp_notifications?: boolean;
     push_notifications?: boolean;
     reservation_confirmation?: boolean;
     reservation_reminder?: boolean;
@@ -328,17 +309,6 @@ export interface NotificationSettings extends BaseEntity {
       table_ready_delay?: number;
     };
   };
-}
-
-// WhatsApp Account Info types
-export interface WhatsAppAccountInfo extends BaseEntity {
-  restaurant_id: string;
-  email?: string;
-  about?: string;
-  description?: string;
-  photo_url?: string;
-  website?: string;
-  address?: string;
 }
 
 // User Profile extended types
@@ -356,6 +326,5 @@ export interface RestaurantSettingsResponse {
   restaurant: Restaurant;
   ai_settings: AISettings | null;
   notification_settings: NotificationSettings | null;
-  whatsapp_account_info: WhatsAppAccountInfo | null;
   users: UserProfileExtended[];
 } 

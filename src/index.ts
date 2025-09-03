@@ -28,7 +28,7 @@ import userRoutes from './routes/userRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import publicMenuRoutes from './routes/publicMenuRoutes';
 import publicRoutes from './routes/publicRoutes';
-import whatsappV2Routes from './routes/whatsappV2Routes';
+
 
 // Import middleware
 import { errorHandler, notFound } from './middleware/errorHandler';
@@ -512,30 +512,7 @@ app.get('/health/detailed', (req, res) => {
   });
 });
 
-// Health WhatsApp (query restaurant_id)
-app.get('/health/whatsapp', async (req, res) => {
-  try {
-    const restaurant_id = req.query.restaurant_id as string;
-    if (!restaurant_id) return res.status(400).json({ success: false, message: 'restaurant_id é obrigatório' });
-    const { data } = await (await import('./config/database')).supabase
-      .from('whatsapp_business_integrations')
-      .select('business_account_id, phone_number_id, metadata, updated_at')
-      .eq('restaurant_id', restaurant_id)
-      .single();
-    return res.json({
-      success: true,
-      data: {
-        status: data ? 'active' : 'inactive',
-        waba_id: data?.business_account_id || null,
-        phone_number_id: data?.phone_number_id || null,
-        last_webhook_trigger: data?.updated_at || null,
-        quality_rating: (data as any)?.metadata?.quality_rating || null
-      }
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: 'Erro interno' });
-  }
-});
+
 
 // API documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -560,7 +537,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/experience', experienceRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/whatsapp', whatsappV2Routes);
+
 
 // Public routes (no authentication required)
 app.use('/api/public/menu', publicMenuRoutes);
