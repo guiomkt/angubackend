@@ -180,7 +180,17 @@ router.get('/oauth/callback', async (req, res) => {
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth', success: true, details: { business_id: client_business_id } });
 
-    res.send('<html><body><script>window.close && window.close();</script><p>OAuth concluído. Você pode fechar esta janela.</p></body></html>');
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
+<script>
+  try {
+    if (window.opener && typeof window.opener.postMessage === 'function') {
+      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
+    }
+  } catch (e) {}
+  try { window.close(); } catch (e) {}
+  </script>
+  <p>OAuth concluído. Você pode fechar esta janela.</p>
+  </body></html>`);
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback', step: 'oauth', status: 'error', error: error?.message }, 'OAuth callback error');
