@@ -245,7 +245,8 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     const tokenFingerprint = getTokenFingerprint(graphToken);
 
     if (!graphToken) {
-      res.status(400).json({ success: false, error: 'Token não encontrado para configurar WhatsApp' });
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_PERMANENT_TOKEN is missing.' });
+      res.status(400).json({ status: "error", action: "invalid_bsp_token", message: 'BSP permanent token is not configured.' });
       return;
     }
 
@@ -264,12 +265,8 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       const url = `${WHATSAPP_API_URL}/${resolved_business_id}/owned_whatsapp_business_accounts`;
       const t0 = Date.now();
       try {
-        const discoveryToken = oauthToken?.access_token || '';
-        const discoveryTokenSource = 'oauth';
-        const discoveryTokenFingerprint = getTokenFingerprint(discoveryToken);
-
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source: discoveryTokenSource, token_fingerprint: discoveryTokenFingerprint }, 'Attempting WABA discovery');
-        const resp = await axios.get(url, { params: { access_token: discoveryToken } });
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting WABA discovery');
+        const resp = await axios.get(url, { params: { access_token: graphToken } });
         const latency_ms = Date.now() - t0;
         const j: any = resp.data;
         const list = j?.data || [];
@@ -460,7 +457,7 @@ router.post('/claim', authenticate, requireRestaurant, async (req: Authenticated
       .limit(1)
       .maybeSingle();
     const oauthToken = tokenRow.data;
-    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || oauthToken?.access_token || '';
+    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
 
     // Fetch WABA via business id from integration row if present
     let waba_id: string | null = null;
