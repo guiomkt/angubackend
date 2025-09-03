@@ -120,6 +120,18 @@ router.get('/oauth/callback', async (req, res) => {
   const correlationId = getCorrelationId(req as any);
   const { code, state } = req.query as Record<string, string>;
 
+  const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
+<script>
+  try {
+    if (window.opener && typeof window.opener.postMessage === 'function') {
+      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
+    }
+  } catch (e) {}
+  try { window.close(); } catch (e) {}
+  </script>
+  <p>OAuth concluído. Você pode fechar esta janela.</p>
+  </body></html>`;
+
   try {
     if (!code || !state) {
       res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
@@ -127,12 +139,26 @@ router.get('/oauth/callback', async (req, res) => {
     }
 
     const parsed = verifyState(state);
-    if (!parsed?.restaurant_id) {
+    if (!parsed?.restaurant_id || !parsed.nonce) {
       res.status(400).json({ success: false, error: 'State inválido' });
       return;
     }
 
-    const restaurant_id = parsed.restaurant_id as string;
+    const { restaurant_id, nonce } = parsed as { restaurant_id: string, nonce: string };
+
+    // Check for duplicate nonce
+    const { data: existingToken, error: nonceError } = await supabase
+      .from('oauth_tokens')
+      .select('id')
+      .eq('restaurant_id', restaurant_id)
+      .eq('metadata->>nonce', nonce)
+      .maybeSingle();
+
+    if (nonceError || existingToken) {
+      logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
+      res.send(closePopupScript);
+      return;
+    }
 
     const url = `${META_URLS.OAUTH_ACCESS_TOKEN}?client_id=${encodeURIComponent(FACEBOOK_APP_ID)}&client_secret=${encodeURIComponent(FACEBOOK_APP_SECRET)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code=${encodeURIComponent(code)}`;
 
@@ -161,53 +187,30 @@ router.get('/oauth/callback', async (req, res) => {
         }
         logger.info({ correlationId, restaurant_id, action: 'oauth_callback', step: 'token_exchange', status: 'success', http_status: 200, graph_endpoint: `${META_CONFIG.GRAPH_API_BASE}/${META_CONFIG.API_VERSION}/oauth/access_token`, latency_ms: latency_ms2 }, 'Exchanged to long-lived token');
       }
-    } catch {}
-
-    // Resolve client business id
-    let client_business_id: string | null = null;
-    try {
-      const bizUrl = `${WHATSAPP_API_URL}/me?fields=id,name,businesses.limit(10){id,name}&access_token=${encodeURIComponent(access_token)}`;
-      const t2 = Date.now();
-      const bizResp = await axios.get(bizUrl);
-      const latency_ms3 = Date.now() - t2;
-      const bizJson: any = bizResp.data;
-      const list = bizJson?.businesses?.data || [];
-      client_business_id = list.length > 0 ? list[0].id : null;
-      logger.info({ correlationId, restaurant_id, action: 'oauth_callback', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: `${WHATSAPP_API_URL}/me`, latency_ms: latency_ms3 }, 'Resolved business id');
-    } catch (e: any) {
-      await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message: e?.message });
+    } catch (e) {
+      logger.warn({ correlationId, restaurant_id, action: 'oauth_callback', step: 'token_exchange', status: 'warn', error: (e as any)?.message }, 'Failed to exchange for long-lived token, using short-lived token.');
     }
 
     // Persist oauth token
     await supabase.from('oauth_tokens').insert({
       provider: 'meta',
-      business_id: client_business_id || 'unknown',
+      business_id: 'unknown', // Will be resolved in /setup
       restaurant_id,
       access_token,
       token_type: 'long_lived',
       expires_at,
       scope: OAUTH_SCOPES.split(',').map(s => s.trim()),
       is_active: true,
-      metadata: { user_access_token: '[REDACTED]' }
+      metadata: { user_access_token: '[REDACTED]', nonce }
     });
 
-    await writeIntegrationLog({ restaurant_id, step: 'oauth', success: true, details: { business_id: client_business_id } });
+    await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
-    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
-<script>
-  try {
-    if (window.opener && typeof window.opener.postMessage === 'function') {
-      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
-    }
-  } catch (e) {}
-  try { window.close(); } catch (e) {}
-  </script>
-  <p>OAuth concluído. Você pode fechar esta janela.</p>
-  </body></html>`);
+    res.send(closePopupScript);
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback', step: 'oauth', status: 'error', error: error?.message }, 'OAuth callback error');
-    await writeIntegrationLog({ restaurant_id, step: 'oauth', success: false, error_message: error?.message });
+    await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: false, error_message: error?.message });
     res.status(500).json({ success: false, error: 'Erro no callback OAuth' });
   }
 });
