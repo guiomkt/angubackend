@@ -305,7 +305,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
         // Re-fetch numbers to get the ID of the new one
         const refetchResp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: graphToken } });
         const newList = refetchResp.data?.data || [];
-        const newNumber = newList.find((p: any) => p.display_phone_number.endsWith(phone_number));
+        const newNumber = newList.find((p: any) => !p.verified_name && p.display_phone_number.endsWith(phone_number));
         
         if (newNumber) {
             resolved_phone_number_id = newNumber.id;
@@ -320,7 +320,6 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
         return;
       }
     }
-
 
     // Subscribe app to WABA messages
     if (waba_id) {
