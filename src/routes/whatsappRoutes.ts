@@ -97,8 +97,10 @@ async function getRestaurantIdFromUser(req: AuthenticatedRequest): Promise<strin
 router.get('/oauth/login', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
   const restaurant_id = await getRestaurantIdFromUser(req);
+  logger.info({ correlationId, action: 'oauth_login.start', restaurant_id }, 'OAuth login started');
   try {
     if (!FACEBOOK_APP_ID || !REDIRECT_URI) {
+      logger.error({ correlationId, action: 'oauth_login.error', restaurant_id }, 'Meta OAuth not configured');
       res.status(500).json({ success: false, error: 'Meta OAuth não configurado' });
       return;
     }
@@ -111,12 +113,12 @@ router.get('/oauth/login', authenticate, requireRestaurant, async (req: Authenti
 
     const authUrl = `${META_URLS.OAUTH_DIALOG}?client_id=${encodeURIComponent(FACEBOOK_APP_ID)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(OAUTH_SCOPES)}&response_type=code`;
 
-    logger.info({ correlationId, restaurant_id, action: 'oauth_login', step: 'oauth', status: 'ready' }, 'OAuth login URL generated');
+    logger.info({ correlationId, action: 'oauth_login.url_generated', restaurant_id, authUrl }, 'OAuth login URL generated');
     await writeIntegrationLog({ restaurant_id: restaurant_id || undefined, step: 'oauth', success: true, details: { action: 'login_url', auth_url_generated: true } });
 
     res.json({ success: true, data: { authUrl, state } });
   } catch (error: any) {
-    logger.error({ correlationId, restaurant_id, action: 'oauth_login', step: 'oauth', status: 'error', error: error?.message }, 'OAuth login error');
+    logger.error({ correlationId, action: 'oauth_login.error', restaurant_id, error: error?.message }, 'OAuth login error');
     await writeIntegrationLog({ restaurant_id: restaurant_id || undefined, step: 'oauth', success: false, error_message: error?.message });
     res.status(500).json({ success: false, error: 'Erro ao iniciar OAuth' });
   }
@@ -126,8 +128,7 @@ router.get('/oauth/login', authenticate, requireRestaurant, async (req: Authenti
 router.get('/oauth/callback', async (req, res) => {
   const correlationId = getCorrelationId(req as any);
   const { code, state } = req.query as Record<string, string>;
-
-  logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, '🔵 OAuth callback started');
+  logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
   const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
   <title>WhatsApp OAuth Complete</title>
@@ -161,7 +162,7 @@ router.get('/oauth/callback', async (req, res) => {
     }
 
     const { restaurant_id, nonce } = parsed as { restaurant_id: string, nonce: string };
-    logger.info({ correlationId, action: 'oauth_callback.state_parsed', restaurant_id, nonce_present: !!nonce }, 'State parsed successfully');
+    logger.info({ correlationId, action: 'oauth_callback.code_state_parsed', restaurant_id, nonce_present: !!nonce }, 'Code and state parsed');
 
     // Check for duplicate nonce
     const { data: existingToken, error: nonceError } = await supabase
@@ -226,20 +227,20 @@ router.get('/oauth/callback', async (req, res) => {
     }).select('id');
 
     if (tokenInsertError) {
-      logger.error({ correlationId, action: 'oauth_callback.token_persist_error', restaurant_id, error: tokenInsertError.message }, '🔴 Failed to persist OAuth token');
+      logger.error({ correlationId, action: 'oauth_callback.token_persist.error', restaurant_id, error: tokenInsertError.message }, 'Failed to persist OAuth token');
     } else {
-      logger.info({ correlationId, action: 'oauth_callback.token_persist_success', restaurant_id, token_id: tokenData[0]?.id }, '✅ OAuth token persisted successfully');
+      logger.info({ correlationId, action: 'oauth_callback.token_persist.success', restaurant_id, token_id: tokenData[0]?.id }, 'OAuth token persisted successfully');
     }
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
     // Send response to close the popup and notify the opener
-    logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, '✅ Close popup script sent to client');
+    logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, 'Close popup script sent to client');
     res.send(closePopupScript);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
-    logger.error({ correlationId, restaurant_id, action: 'oauth_callback', step: 'oauth', status: 'error', error: error?.message }, 'OAuth callback error');
+    logger.error({ correlationId, restaurant_id, action: 'oauth_callback.error', step: 'exception', error: error?.message }, 'OAuth callback error');
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: false, error_message: error?.message });
     res.status(500).json({ success: false, error: 'Erro no callback OAuth' });
   }
@@ -252,6 +253,7 @@ router.get('/oauth/success', (req, res) => {
 // 2. Setup
 router.post('/setup', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
+  logger.info({ correlationId, action: 'setup.start', restaurant_id: req.user?.restaurant_id }, 'Setup started');
   const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number, cc, phone_number } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
   const token_source = 'bsp_permanent';
@@ -1032,6 +1034,7 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
 // Status endpoint
 router.get('/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req as any);
+  logger.info({ correlationId, action: 'status.start', restaurant_id: req.user?.restaurant_id }, 'Status check started');
   const authHeader = req.headers['authorization'] || '';
   const tokenFingerprint = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
     ? `${authHeader.slice(7, 12)}...`
@@ -1080,24 +1083,11 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     }
 
     if (!data) {
-      logger.info({ 
-        correlationId, 
-        action: "status.read", 
-        restaurant_id, 
-        reason: 'missing_integration_row',
-        // Check if there are any OAuth tokens for this restaurant
-        restaurant_has_oauth: async () => {
-          const { count } = await supabase
-            .from('oauth_tokens')
-            .select('id', { count: 'exact', head: true })
-            .eq('restaurant_id', restaurant_id)
-            .eq('provider', 'meta');
-          return count && count > 0;
-        }
-      }, "No integration found for restaurant, returning not_connected.");
-      
+      logger.info({ correlationId, action: 'status.not_connected', restaurant_id }, 'No integration found, returning not_connected');
       return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
     }
+    
+    logger.info({ correlationId, action: 'status.integration_found', restaurant_id, status: data.connection_status }, 'Integration found');
     
     const waba_id = (data.metadata as any)?.waba_id || null;
     let returned_status = data.connection_status || 'not_connected';
@@ -1105,15 +1095,11 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     
     logger.info({ 
       correlationId, 
-      action: "status.integration_found", 
+      action: "status.fetch_numbers", 
       restaurant_id, 
-      connection_status: returned_status,
-      integration_id: data.id,
-      waba_id: waba_id,
-      phone_number_id: data.phone_number_id ? `${data.phone_number_id.substring(0, 5)}...` : null,
-      created_at: data.created_at,
-      updated_at: data.updated_at
-    }, "Found WhatsApp integration record");
+      waba_id, 
+      graph_endpoint: `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`
+    }, "Fetching phone numbers from Graph API");
     
     if (returned_status === 'active') {
       if (waba_id) {
@@ -1157,15 +1143,7 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
       }
     }
 
-    logger.info({ 
-      correlationId,
-      action: "status.read", 
-      restaurant_id, 
-      db_row_id: data.id, 
-      returned_status, 
-      numbers_count: numbers.length, 
-      waba_id
-    }, "WhatsApp status requested - detailed info");
+    logger.info({ correlationId, action: 'status.response_sent', restaurant_id }, 'Status response sent');
 
     return res.json({
       success: true,
