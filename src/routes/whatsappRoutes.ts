@@ -607,9 +607,9 @@ router.post('/webhook', async (req, res) => {
                   contact_id, 
                   conversation_id: conversation_id_str, 
                   status: 'open', 
-                  last_message_at: new Date().toISOString()
-                  // The phone_number_id column does not exist in the schema, so we remove it.
-                  // phone_number_id: metadata.phone_number_id
+                  last_message_at: new Date().toISOString(),
+                  // Now that the column will exist, we can save this crucial information.
+                  phone_number_id: metadata.phone_number_id
                 })
                 .select('id')
                 .single();
@@ -640,8 +640,8 @@ router.post('/webhook', async (req, res) => {
               status: 'delivered',
               direction: 'inbound',
               conversation_id: conversation_id_str,
-              // The phone_number_id column does not exist in the schema, so we remove it.
-              // phone_number_id,
+              // Now that the column will exist, we can save this crucial information.
+              phone_number_id,
               metadata: { timestamp: msg.timestamp }
             }).select('id').single();
             
@@ -996,29 +996,33 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
 router.get('/contacts', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
   const restaurant_id = req.user?.restaurant_id;
-  // We can no longer filter by phone_number_id as the column does not exist in the target table.
-  // const { phone_number_id } = req.query as { phone_number_id?: string };
+  const { phone_number_id } = req.query as { phone_number_id?: string };
 
-  if (!restaurant_id) {
+  if (!restaurant_id || !phone_number_id) {
     return res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
   }
 
-  logger.info({ correlationId, restaurant_id, action: 'get_contacts.start' }, 'Fetching all contacts for restaurant');
+  logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
 
   try {
-    // Fetch all contacts for the given restaurant, as we can no longer filter by number.
-    const { data: contacts, error: contactsError } = await supabase
-      .from('whatsapp_contacts')
-      .select('*')
+    // Re-instating the correct join logic now that the schema will be updated.
+    const { data: conversations, error: convError } = await supabase
+      .from('whatsapp_conversations')
+      .select(`
+        contact_id,
+        whatsapp_contacts ( * )
+      `)
       .eq('restaurant_id', restaurant_id)
-      .order('last_message_at', { ascending: false, nullsFirst: false });
+      .eq('phone_number_id', phone_number_id);
 
-    if (contactsError) {
-      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: contactsError.message }, 'Error fetching contacts by ID');
-      return res.status(500).json({ success: false, error: 'Erro ao buscar detalhes dos contatos' });
+    if (convError) {
+      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: convError.message }, 'Error fetching conversations for contacts');
+      return res.status(500).json({ success: false, error: 'Erro ao buscar conversas' });
     }
 
-    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB');
+    const contacts = conversations.map(c => c.whatsapp_contacts).filter(Boolean);
+
+    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB via conversations');
     return res.json({ success: true, data: contacts });
 
   } catch (error: any) {
@@ -1026,7 +1030,6 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
     return res.status(500).json({ success: false, error: 'Erro ao buscar contatos' });
   }
 });
-
 
 // 8. Disconnect/Forget Integration
 router.post('/disconnect', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
