@@ -1274,33 +1274,31 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
   logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
 
   try {
-    // First, try to fetch from our local DB
-    const { data: contacts, error: dbError } = await supabase
-      .from('chat_contacts')
-      .select('*')
+    // As we cannot alter the chat_contacts table, we will join through whatsapp_conversations
+    // which has the phone_number_id we need to filter by.
+    const { data: conversations, error: convError } = await supabase
+      .from('whatsapp_conversations')
+      .select(`
+        contact_id,
+        chat_contacts ( * )
+      `)
       .eq('restaurant_id', restaurant_id)
-      // .eq('source_phone_number_id', phone_number_id) // We'll need to add a column for this
-      .order('last_message_at', { ascending: false });
+      .eq('phone_number_id', phone_number_id);
 
-    if (dbError) {
-      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: dbError.message }, 'Error fetching contacts from DB');
-      // Don't fail, we can still try to fetch from Meta
+    if (convError) {
+      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: convError.message }, 'Error fetching conversations for contacts');
+      return res.status(500).json({ success: false, error: 'Erro ao buscar conversas' });
     }
 
-    if (contacts && contacts.length > 0) {
-      logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB');
-      return res.json({ success: true, data: contacts });
-    }
-    
-    // If DB is empty, this is where we would fetch from Meta API.
-    // This part is complex and requires handling pagination and syncing with our DB.
-    // For now, we return what we have. A full sync would be a separate, larger task.
-    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: 0 }, 'No contacts found in DB, returning empty list');
-    res.json({ success: true, data: [] });
+    // Extract the contact details from the join.
+    const contacts = conversations.map(c => c.chat_contacts).filter(Boolean);
+
+    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB via conversations');
+    return res.json({ success: true, data: contacts });
 
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'get_contacts.error', error: error?.message }, 'Failed to get contacts');
-    res.status(500).json({ success: false, error: 'Erro ao buscar contatos' });
+    return res.status(500).json({ success: false, error: 'Erro ao buscar contatos' });
   }
 });
 
@@ -1318,26 +1316,39 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
   logger.info({ correlationId, restaurant_id, contact_id, action: 'get_messages.start' }, 'Fetching messages');
 
   try {
-    const { data: messages, error } = await supabase
-      .from('chat_messages')
+    // To get messages for a contact, we first need the contact's phone number.
+    const { data: contact, error: contactError } = await supabase
+      .from('chat_contacts')
+      .select('phone_number')
+      .eq('id', contact_id)
+      .single();
+
+    if (contactError || !contact) {
+        logger.error({ correlationId, restaurant_id, action: 'get_messages.contact_error', error: contactError?.message }, 'Could not find contact to fetch messages');
+        return res.status(404).json({ success: false, error: 'Contato não encontrado' });
+    }
+    
+    // Then, find the corresponding conversation_id string.
+    const conversation_id_str = `wa_${restaurant_id}_${contact.phone_number}`;
+
+    const { data: messages, error: messagesError } = await supabase
+      .from('whatsapp_messages')
       .select('*')
-      // This assumes a link between chat_messages and chat_contacts.
-      // We need to clarify the schema to implement this correctly.
-      // e.g., .eq('contact_id', contact_id)
-      .eq('restaurant_id', restaurant_id) 
+      .eq('restaurant_id', restaurant_id)
+      .eq('conversation_id', conversation_id_str)
       .order('created_at', { ascending: true });
 
-    if (error) {
-      logger.error({ correlationId, restaurant_id, action: 'get_messages.db_error', error: error.message }, 'Error fetching messages from DB');
+    if (messagesError) {
+      logger.error({ correlationId, restaurant_id, action: 'get_messages.db_error', error: messagesError.message }, 'Error fetching messages from DB');
       return res.status(500).json({ success: false, error: 'Erro ao buscar mensagens do banco de dados' });
     }
     
     logger.info({ correlationId, restaurant_id, action: 'get_messages.success', count: messages.length }, 'Messages fetched from DB');
-    res.json({ success: true, data: messages });
+    return res.json({ success: true, data: messages });
 
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'get_messages.error', error: error?.message }, 'Failed to get messages');
-    res.status(500).json({ success: false, error: 'Erro ao buscar mensagens' });
+    return res.status(500).json({ success: false, error: 'Erro ao buscar mensagens' });
   }
 });
 
