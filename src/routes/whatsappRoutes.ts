@@ -130,27 +130,8 @@ router.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query as Record<string, string>;
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
-  const closePopupScript = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>WhatsApp OAuth Complete</title>
-  <script>
-    try {
-      // Set flag for the main window to detect success via polling
-      window.localStorage.setItem('whatsapp_oauth_success', Date.now().toString());
-    } catch (e) {
-      // Ignore errors in sandboxed environments
-    } finally {
-      // Close the popup
-      window.close();
-    }
-  </script>
-</head>
-<body>
-  <p>Conectado! Esta janela será fechada.</p>
-</body>
-</html>`;
+  const frontendUrl = process.env.FRONTEND_URL || 'https://www.angu.ai';
+  const successRedirectUrl = `${frontendUrl}/whatsapp-oauth-success`;
   
   try {
     if (!code || !state) {
@@ -179,10 +160,8 @@ router.get('/oauth/callback', async (req, res) => {
 
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
-      logger.info({ correlationId, action: 'oauth_callback.sending_response', status: 'duplicate' }, '🟢 Sending close popup script for duplicate nonce');
-      res.send(closePopupScript);
-      logger.info({ correlationId, action: 'oauth_callback.response_sent', status: 'duplicate' }, '✅ Close popup script sent for duplicate nonce');
-      return;
+      logger.info({ correlationId, action: 'oauth_callback.redirecting', status: 'duplicate' }, 'Redirecting for duplicate nonce');
+      return res.redirect(successRedirectUrl);
     }
 
     const url = `${META_URLS.OAUTH_ACCESS_TOKEN}?client_id=${encodeURIComponent(FACEBOOK_APP_ID)}&client_secret=${encodeURIComponent(FACEBOOK_APP_SECRET)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code=${encodeURIComponent(code)}`;
@@ -240,8 +219,8 @@ router.get('/oauth/callback', async (req, res) => {
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
     // Send response to close the popup and notify the opener
-    logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, 'Close popup script sent to client');
-    res.send(closePopupScript);
+    logger.info({ correlationId, action: 'oauth_callback.redirecting', restaurant_id, url: successRedirectUrl }, 'Redirecting to frontend callback page');
+    res.redirect(successRedirectUrl);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
