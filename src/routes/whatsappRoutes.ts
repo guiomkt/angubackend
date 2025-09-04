@@ -431,10 +431,31 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       metadata: { mode, waba_id }
     } as any;
 
-    if (current.data) {
-      await supabase.from('whatsapp_business_integrations').update(insertOrUpdate).eq('id', current.data.id);
-    } else {
-      await supabase.from('whatsapp_business_integrations').insert(insertOrUpdate);
+    logger.info({ action: 'setup.persist.attempt', restaurant_id, payload: insertOrUpdate }, 'Attempting to persist whatsapp_business_integrations');
+
+    try {
+      if (current.data) {
+        const { error: upErr } = await supabase
+          .from('whatsapp_business_integrations')
+          .update(insertOrUpdate)
+          .eq('id', current.data.id);
+        if (upErr) {
+          logger.error({ action: 'setup.persist.error', restaurant_id, error: upErr.message }, 'Failed to update integration row');
+          throw upErr;
+        }
+      } else {
+        const { error: insErr } = await supabase
+          .from('whatsapp_business_integrations')
+          .insert(insertOrUpdate);
+        if (insErr) {
+          logger.error({ action: 'setup.persist.error', restaurant_id, error: insErr.message }, 'Failed to insert integration row');
+          throw insErr;
+        }
+      }
+      logger.info({ action: 'setup.persist.success', restaurant_id }, 'Integration row persisted');
+    } catch (persistError: any) {
+      // Surface persistence failures
+      throw persistError;
     }
 
     // Update signup state
