@@ -353,7 +353,39 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       }
     }
 
+    // Step 3: Configure Webhook for the App
     const webhook_url = `${API_BASE_URL}/api/whatsapp/webhook`;
+    try {
+      const appId = FACEBOOK_APP_ID;
+      const url = `${WHATSAPP_API_URL}/${appId}/subscriptions`;
+      const subscribed_fields = ["messages", "message_template_status_update", "account_update"];
+      
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'pending', graph_endpoint: url, appId }, 'Configuring app webhook');
+      
+      await axios.post(url, {
+        object: 'whatsapp_business_account',
+        callback_url: webhook_url,
+        verify_token: WEBHOOK_VERIFY_TOKEN,
+        fields: subscribed_fields.join(','),
+        include_values: true,
+        access_token: graphToken
+      }, { headers: { 'Content-Type': 'application/json' } });
+
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'success' }, 'Webhook configured successfully');
+      await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: true, details: { webhook_url, subscribed_fields } });
+    } catch (e: any) {
+      const http_status = e?.response?.status || 500;
+      const error_message = e?.response?.data?.error?.message || e.message;
+      // It's possible the webhook is already configured, so we can treat some errors as non-fatal.
+      if (error_message.includes("already subscribed")) {
+        logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'already_configured' }, 'Webhook was already configured.');
+        await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: true, details: { note: 'already_configured' } });
+      } else {
+        await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: false, error_message, details: { http_status } });
+        throw e;
+      }
+    }
+
 
     // Persist webhook record idempotently
     const existingWebhook = await supabase
