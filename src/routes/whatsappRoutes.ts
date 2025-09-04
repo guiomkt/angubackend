@@ -334,7 +334,7 @@ router.get('/oauth/callback', async (req, res) => {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback.error', step: 'exception', error: error?.message }, 'OAuth callback error');
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: false, error_message: error?.message });
-    res.status(500).send('Ocorreu um erro no servidor.');
+    return res.status(500).send('Ocorreu um erro no servidor.');
   }
 });
 
