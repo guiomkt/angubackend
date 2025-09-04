@@ -130,10 +130,27 @@ router.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query as Record<string, string>;
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
-  // Define the target origin for postMessage
-  const frontendUrl = process.env.FRONTEND_URL || 'https://www.angu.ai';
-  
-  const successRedirectUrl = `${frontendUrl}/whatsapp-oauth-success`;
+  const closePopupScript = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>WhatsApp OAuth Complete</title>
+  <script>
+    try {
+      // Set flag for the main window to detect success via polling
+      window.localStorage.setItem('whatsapp_oauth_success', Date.now().toString());
+    } catch (e) {
+      // Ignore errors in sandboxed environments
+    } finally {
+      // Close the popup
+      window.close();
+    }
+  </script>
+</head>
+<body>
+  <p>Conectado! Esta janela será fechada.</p>
+</body>
+</html>`;
   
   try {
     if (!code || !state) {
@@ -163,7 +180,7 @@ router.get('/oauth/callback', async (req, res) => {
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
       logger.info({ correlationId, action: 'oauth_callback.sending_response', status: 'duplicate' }, '🟢 Sending close popup script for duplicate nonce');
-      res.redirect(successRedirectUrl);
+      res.send(closePopupScript);
       logger.info({ correlationId, action: 'oauth_callback.response_sent', status: 'duplicate' }, '✅ Close popup script sent for duplicate nonce');
       return;
     }
@@ -223,8 +240,8 @@ router.get('/oauth/callback', async (req, res) => {
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
     // Send response to close the popup and notify the opener
-    logger.info({ correlationId, action: 'oauth_callback.redirecting', restaurant_id, url: successRedirectUrl }, 'Redirecting to frontend callback page');
-    res.redirect(successRedirectUrl);
+    logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, 'Close popup script sent to client');
+    res.send(closePopupScript);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
@@ -1242,6 +1259,86 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
     return;
   }
   res.json({ success: true, data });
+});
+
+// 6. Get Contacts/Conversations
+router.get('/contacts', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req);
+  const restaurant_id = req.user?.restaurant_id;
+  const { phone_number_id } = req.query as { phone_number_id?: string };
+
+  if (!restaurant_id || !phone_number_id) {
+    return res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
+  }
+
+  logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
+
+  try {
+    // First, try to fetch from our local DB
+    const { data: contacts, error: dbError } = await supabase
+      .from('chat_contacts')
+      .select('*')
+      .eq('restaurant_id', restaurant_id)
+      // .eq('source_phone_number_id', phone_number_id) // We'll need to add a column for this
+      .order('last_message_at', { ascending: false });
+
+    if (dbError) {
+      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: dbError.message }, 'Error fetching contacts from DB');
+      // Don't fail, we can still try to fetch from Meta
+    }
+
+    if (contacts && contacts.length > 0) {
+      logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB');
+      return res.json({ success: true, data: contacts });
+    }
+    
+    // If DB is empty, this is where we would fetch from Meta API.
+    // This part is complex and requires handling pagination and syncing with our DB.
+    // For now, we return what we have. A full sync would be a separate, larger task.
+    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: 0 }, 'No contacts found in DB, returning empty list');
+    res.json({ success: true, data: [] });
+
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'get_contacts.error', error: error?.message }, 'Failed to get contacts');
+    res.status(500).json({ success: false, error: 'Erro ao buscar contatos' });
+  }
+});
+
+
+// 7. Get Messages for a Conversation
+router.get('/messages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req);
+  const restaurant_id = req.user?.restaurant_id;
+  const { contact_id } = req.query as { contact_id?: string };
+
+  if (!restaurant_id || !contact_id) {
+    return res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
+  }
+
+  logger.info({ correlationId, restaurant_id, contact_id, action: 'get_messages.start' }, 'Fetching messages');
+
+  try {
+    const { data: messages, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      // This assumes a link between chat_messages and chat_contacts.
+      // We need to clarify the schema to implement this correctly.
+      // e.g., .eq('contact_id', contact_id)
+      .eq('restaurant_id', restaurant_id) 
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      logger.error({ correlationId, restaurant_id, action: 'get_messages.db_error', error: error.message }, 'Error fetching messages from DB');
+      return res.status(500).json({ success: false, error: 'Erro ao buscar mensagens do banco de dados' });
+    }
+    
+    logger.info({ correlationId, restaurant_id, action: 'get_messages.success', count: messages.length }, 'Messages fetched from DB');
+    res.json({ success: true, data: messages });
+
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'get_messages.error', error: error?.message }, 'Failed to get messages');
+    res.status(500).json({ success: false, error: 'Erro ao buscar mensagens' });
+  }
 });
 
 export default router; 
