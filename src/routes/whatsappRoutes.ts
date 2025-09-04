@@ -330,7 +330,7 @@ router.get('/oauth/callback', async (req, res) => {
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
-    res.send(closePopupScript);
+    return res.send(closePopupScript);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
