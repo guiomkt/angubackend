@@ -659,23 +659,46 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
   const correlationId = getCorrelationId(req);
   const { restaurant_id: bodyRestaurantId, to, type = 'text', message, from_phone_number_id } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
+
   if (!restaurant_id || !to || !message || !from_phone_number_id) {
-    res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
-    return;
+    return res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
   }
 
   try {
-    const integ = await supabase
+    const { data: integData, error: integError } = await supabase
       .from('whatsapp_business_integrations')
-      .select('*')
+      .select('metadata, phone_number')
       .eq('restaurant_id', restaurant_id)
       .maybeSingle();
     
-    const from_phone = integ.data?.phone_number || '';
+    if (integError || !integData) {
+        return res.status(404).json({ success: false, error: 'Integração não encontrada' });
+    }
 
-    if (!from_phone_number_id) {
-      res.status(400).json({ success: false, error: 'Integração WhatsApp não configurada' });
-      return;
+    const metadata = integData.metadata as any;
+    const waba_id = metadata?.waba_id;
+    const from_phone = integData.phone_number || '';
+
+    if (!waba_id) {
+      return res.status(400).json({ success: false, error: 'WABA ID não encontrado. A integração pode estar incompleta.' });
+    }
+
+    // Pre-flight check: Verify webhook subscription before sending
+    try {
+        const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
+        const url = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
+        const resp = await axios.get<{ data: any[] }>(url, { params: { access_token: graphToken } });
+        const subscribed_apps = resp.data?.data || [];
+        const isSubscribedToMessages = subscribed_apps.some(app => app.subscribed_fields?.includes('messages'));
+
+        if (!isSubscribedToMessages) {
+            const errorMsg = 'Assinatura de webhook para "messages" não está ativa. A mensagem será enviada, mas você não receberá respostas.';
+            logger.error({ correlationId, restaurant_id, waba_id, action: 'send.preflight_check.error' }, errorMsg);
+            // We will proceed with sending but include a warning in the response.
+            // This is better than failing silently.
+        }
+    } catch (e: any) {
+        logger.warn({ correlationId, restaurant_id, waba_id, action: 'send.preflight_check.failed', error: e.message }, 'Falha ao verificar a assinatura do webhook. A mensagem ainda será enviada.');
     }
 
     const payload: any = {
@@ -1194,6 +1217,56 @@ router.post('/disconnect', authenticate, requireRestaurant, async (req: Authenti
     logger.error({ correlationId, restaurant_id, action: 'disconnect.error', error: error?.message }, 'Failed to disconnect WhatsApp integration');
     return res.status(500).json({ success: false, error: 'Erro ao remover integração' });
   }
+});
+
+router.get('/verify-subscription', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+    const correlationId = getCorrelationId(req);
+    const restaurant_id = req.user?.restaurant_id;
+
+    if (!restaurant_id) {
+        return res.status(400).json({ success: false, error: 'Restaurante não identificado' });
+    }
+
+    logger.info({ correlationId, restaurant_id, action: 'verify_subscription.start' }, 'Starting subscription verification');
+
+    try {
+        const { data: integData, error: integError } = await supabase
+            .from('whatsapp_business_integrations')
+            .select('metadata')
+            .eq('restaurant_id', restaurant_id)
+            .maybeSingle();
+        
+        if (integError || !integData) {
+            return res.status(404).json({ success: false, error: 'Integration not found' });
+        }
+
+        const metadata = integData.metadata as any;
+        const waba_id = metadata?.waba_id;
+
+        if (!waba_id) {
+            return res.status(400).json({ success: false, error: 'WABA ID not found in integration metadata' });
+        }
+
+        const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
+        if (!graphToken) {
+            return res.status(500).json({ success: false, error: 'BSP_PERMANENT_TOKEN is not configured' });
+        }
+
+        const url = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
+        logger.info({ correlationId, restaurant_id, waba_id, url }, 'Querying Meta for subscribed apps');
+
+        const resp = await axios.get<{ data: any[] }>(url, { params: { access_token: graphToken } });
+        const subscribed_apps = resp.data?.data || [];
+
+        logger.info({ correlationId, restaurant_id, waba_id, subscribed_apps }, 'Successfully fetched subscription status from Meta');
+
+        return res.json({ success: true, data: { waba_id, subscribed_apps } });
+
+    } catch (error: any) {
+        const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown error';
+        logger.error({ correlationId, restaurant_id, action: 'verify_subscription.error', error: errMsg }, 'Failed to verify subscription with Meta');
+        return res.status(500).json({ success: false, error: errMsg });
+    }
 });
 
 // Test endpoint to simulate webhook messages (for development only)
