@@ -118,6 +118,12 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       .maybeSingle();
 
     const oauthToken = tokenRow.data;
+
+    // This is a critical guard. If we just completed OAuth, a token MUST exist.
+    if (!oauthToken || !oauthToken.access_token || !oauthToken.expires_at) {
+        throw new Error('No valid OAuth token found to perform setup.');
+    }
+
     const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
     const tokenFingerprint = getTokenFingerprint(graphToken);
 
@@ -173,6 +179,9 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       phone_number_id: resolved_phone_number_id,
       phone_number: resolved_display_phone_number,
       connection_status,
+      // The missing fields that caused the not-null constraint violation
+      access_token: oauthToken.access_token,
+      token_expires_at: oauthToken.expires_at,
       metadata: { waba_id }
     };
 
