@@ -127,6 +127,8 @@ router.get('/oauth/callback', async (req, res) => {
   const correlationId = getCorrelationId(req as any);
   const { code, state } = req.query as Record<string, string>;
 
+  logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, '🔵 OAuth callback started');
+
   const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
   <title>WhatsApp OAuth Complete</title>
   <script>
@@ -139,13 +141,42 @@ router.get('/oauth/callback', async (req, res) => {
         // Try to notify the opener with more explicit error handling
         if (window.opener) {
           console.log("Window opener found, posting message");
-          // Use '*' for targetOrigin during testing - in production use your actual origin
-          window.opener.postMessage({ 
-            type: 'META_OAUTH_SUCCESS', 
-            timestamp: new Date().toISOString(),
-            status: 'success'
-          }, '*');
+          
+          // Try first with explicit origin (if in production)
+          try {
+            const targetOrigin = window.location.origin || "*";
+            console.log("Posting with targetOrigin:", targetOrigin);
+            window.opener.postMessage({ 
+              type: 'META_OAUTH_SUCCESS', 
+              timestamp: new Date().toISOString(),
+              status: 'success'
+            }, targetOrigin);
+          } catch (originErr) {
+            console.error("Error with specific origin, trying with *:", originErr);
+            // Fallback to * for targetOrigin
+            window.opener.postMessage({ 
+              type: 'META_OAUTH_SUCCESS', 
+              timestamp: new Date().toISOString(),
+              status: 'success'
+            }, '*');
+          }
+          
           console.log("Message posted successfully");
+          
+          // Try a second time after a short delay (to handle race conditions)
+          setTimeout(function() {
+            try {
+              window.opener.postMessage({ 
+                type: 'META_OAUTH_SUCCESS', 
+                timestamp: new Date().toISOString(),
+                status: 'success',
+                retry: true
+              }, '*');
+              console.log("Sent follow-up message");
+            } catch (e) {
+              console.error("Failed to send follow-up message:", e);
+            }
+          }, 500);
         } else {
           console.error("No window.opener found!");
           document.getElementById('status').innerHTML = 'Error: No opener window found!';
@@ -167,6 +198,7 @@ router.get('/oauth/callback', async (req, res) => {
     
     // Run the function when DOM is ready
     document.addEventListener('DOMContentLoaded', function() {
+      console.log("DOM loaded, sending message...");
       sendSuccessMessage();
     });
     
@@ -179,21 +211,34 @@ router.get('/oauth/callback', async (req, res) => {
   <p>WhatsApp authentication successful. This window should close automatically.</p>
   <p id="status">Notifying application...</p>
   <p>If this window doesn't close, you can close it manually and continue in the main application.</p>
+  <script>
+    // One more attempt, from the body
+    console.log("Running script from body");
+    if (typeof sendSuccessMessage === 'function') {
+      console.log("Calling sendSuccessMessage from body");
+      sendSuccessMessage();
+    } else {
+      console.error("sendSuccessMessage not found in body");
+    }
+  </script>
   </body></html>`;
 
   try {
     if (!code || !state) {
+      logger.error({ correlationId, action: 'oauth_callback.error', reason: 'missing_params' }, 'Missing code or state parameters');
       res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
       return;
     }
 
     const parsed = verifyState(state);
     if (!parsed?.restaurant_id || !parsed.nonce) {
+      logger.error({ correlationId, action: 'oauth_callback.error', reason: 'invalid_state' }, 'Invalid state parameter');
       res.status(400).json({ success: false, error: 'State inválido' });
       return;
     }
 
     const { restaurant_id, nonce } = parsed as { restaurant_id: string, nonce: string };
+    logger.info({ correlationId, action: 'oauth_callback.state_parsed', restaurant_id, nonce_present: !!nonce }, 'State parsed successfully');
 
     // Check for duplicate nonce
     const { data: existingToken, error: nonceError } = await supabase
@@ -205,12 +250,17 @@ router.get('/oauth/callback', async (req, res) => {
 
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
+      
+      // Even if duplicate, send the success script to help overcome postMessage issues
+      logger.info({ correlationId, action: 'oauth_callback.sending_response', status: 'duplicate' }, '🟢 Sending close popup script for duplicate nonce');
       res.send(closePopupScript);
+      logger.info({ correlationId, action: 'oauth_callback.response_sent', status: 'duplicate' }, '✅ Close popup script sent for duplicate nonce');
       return;
     }
 
     const url = `${META_URLS.OAUTH_ACCESS_TOKEN}?client_id=${encodeURIComponent(FACEBOOK_APP_ID)}&client_secret=${encodeURIComponent(FACEBOOK_APP_SECRET)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code=${encodeURIComponent(code)}`;
 
+    logger.info({ correlationId, action: 'oauth_callback.token_exchange', restaurant_id }, '🔵 Starting token exchange');
     const t0 = Date.now();
     const tokenResp = await axios.get(url);
     const latency_ms = Date.now() - t0;
@@ -241,7 +291,8 @@ router.get('/oauth/callback', async (req, res) => {
     }
 
     // Persist oauth token
-    await supabase.from('oauth_tokens').insert({
+    logger.info({ correlationId, action: 'oauth_callback.token_persist', restaurant_id }, '🔵 Persisting token to database');
+    const { data: tokenData, error: tokenInsertError } = await supabase.from('oauth_tokens').insert({
       provider: 'meta',
       business_id: 'unknown', // Will be resolved in /setup
       restaurant_id,
@@ -251,11 +302,60 @@ router.get('/oauth/callback', async (req, res) => {
       scope: OAUTH_SCOPES.split(',').map(s => s.trim()),
       is_active: true,
       metadata: { user_access_token: '[REDACTED]', nonce }
-    });
+    }).select('id');
+
+    if (tokenInsertError) {
+      logger.error({ correlationId, action: 'oauth_callback.token_persist_error', restaurant_id, error: tokenInsertError.message }, '🔴 Failed to persist OAuth token');
+    } else {
+      logger.info({ correlationId, action: 'oauth_callback.token_persist_success', restaurant_id, token_id: tokenData[0]?.id }, '✅ OAuth token persisted successfully');
+    }
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
+    // Send response to close the popup and notify the opener
+    logger.info({ correlationId, action: 'oauth_callback.sending_response', restaurant_id }, '🟢 About to send close popup script');
     res.send(closePopupScript);
+    logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, '✅ Close popup script sent to client');
+    
+    // Also try to notify the setup endpoint directly if the postMessage fails
+    try {
+      logger.info({ correlationId, action: 'oauth_callback.direct_setup_attempt', restaurant_id }, '🟡 Attempting direct setup call as fallback');
+      
+      // This is intentionally not awaited - we don't want to block the response
+      // It's just a backup in case the postMessage fails
+      setTimeout(async () => {
+        try {
+          const setupResponse = await axios.post(`${API_BASE_URL}/api/whatsapp/setup`, {
+            mode: 'auto',
+            restaurant_id,
+            direct_trigger: true
+          }, {
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Direct-Trigger': 'true',
+              'X-Correlation-Id': correlationId
+            }
+          });
+          logger.info({ 
+            correlationId, 
+            action: 'oauth_callback.direct_setup_success', 
+            restaurant_id,
+            http_status: setupResponse.status
+          }, '✅ Direct setup call succeeded');
+        } catch (setupError: any) {
+          logger.error({ 
+            correlationId, 
+            action: 'oauth_callback.direct_setup_error', 
+            restaurant_id,
+            error: setupError?.message,
+            status: setupError?.response?.status
+          }, '🔴 Direct setup call failed');
+        }
+      }, 1000);
+    } catch (directCallError: any) {
+      logger.error({ correlationId, action: 'oauth_callback.direct_setup_exception', restaurant_id, error: directCallError.message }, '🔴 Exception in direct setup call');
+    }
+
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback', step: 'oauth', status: 'error', error: error?.message }, 'OAuth callback error');
