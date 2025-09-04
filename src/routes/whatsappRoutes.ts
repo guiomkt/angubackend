@@ -311,12 +311,15 @@ router.get('/oauth/callback', async (req, res) => {
 
     if (tokenInsertError) {
       logger.error({ correlationId, action: 'oauth_callback.token_persist.error', restaurant_id, error: tokenInsertError.message }, 'Failed to persist OAuth token');
-      // Still close the popup, but log the error.
-    } else {
-      logger.info({ correlationId, action: 'oauth_callback.token_persist.success', restaurant_id, token_id: tokenData[0]?.id }, 'OAuth token persisted successfully');
-      
-      // Fire-and-forget the setup process. Don't block the response.
-      performWhatsAppSetup(restaurant_id, correlationId).catch(error => {
+      // This path did not return a value, causing the build error.
+      // We should stop and return an error response.
+      return res.status(500).send('Erro ao salvar o token de autenticação.');
+    } 
+    
+    logger.info({ correlationId, action: 'oauth_callback.token_persist.success', restaurant_id, token_id: tokenData[0]?.id }, 'OAuth token persisted successfully');
+    
+    // Fire-and-forget the setup process. Don't block the response.
+    performWhatsAppSetup(restaurant_id, correlationId).catch(error => {
           logger.error({
               correlationId,
               restaurant_id,
@@ -324,7 +327,6 @@ router.get('/oauth/callback', async (req, res) => {
               error: error?.message
           }, 'The background setup process initiated by OAuth callback failed.');
       });
-    }
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
