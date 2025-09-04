@@ -701,6 +701,13 @@ router.post('/webhook', async (req, res) => {
               metadata: { timestamp: msg.timestamp }
             });
           }
+        } else if (value.statuses && Array.isArray(value.statuses)) {
+          for (const status of value.statuses) {
+            const message_id = status.id;
+            const new_status = status.status;
+            await supabase.from('whatsapp_messages').update({ status: new_status }).eq('message_id', message_id);
+            await writeConnectionLog({ waba_id, action: 'message_status_update', details: { message_id, status: new_status } });
+          }
         } else if (field === 'message_template_status_update') {
           const t = value?.message_templates || [];
           for (const tmpl of t) {
@@ -795,14 +802,32 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
 // Status endpoint
 router.get('/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const restaurant_id = req.user?.restaurant_id;
+  if (!restaurant_id) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
   const { data } = await supabase
     .from('whatsapp_business_integrations')
     .select('*')
     .eq('restaurant_id', restaurant_id)
     .maybeSingle();
 
-  const status = data?.verification_status === 'verified' ? 'active' : (data ? 'pending_verification' : 'not_connected');
-  res.json({ success: true, data: { status, integration: data } });
+  if (!data) {
+    return res.json({ success: true, data: { status: 'not_connected' } });
+  }
+  
+  const waba_id = (data.metadata as any)?.waba_id || null;
+
+  res.json({
+    success: true,
+    data: {
+      status: data.connection_status || 'not_connected',
+      waba_id,
+      phone_number_id: data.phone_number_id,
+      display_phone_number: data.phone_number,
+      restaurant_id: data.restaurant_id
+    }
+  });
 });
 
 // Conversations
