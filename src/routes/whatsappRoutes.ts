@@ -540,10 +540,15 @@ router.get('/webhook', (req, res) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
+  logger.info({ action: 'webhook.verification', mode, token_present: !!token }, '[webhook] Verification request received');
+
   if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN) {
+    logger.info({ action: 'webhook.verification.success', challenge }, '[webhook] verification success');
     res.status(200).send(challenge);
     return;
   }
+  
+  logger.warn({ action: 'webhook.verification.failed', mode, token_matches: token === WEBHOOK_VERIFY_TOKEN }, '[webhook] verification failed');
   res.status(403).send('Forbidden');
 });
 
@@ -553,8 +558,8 @@ router.post('/webhook', async (req, res) => {
   try {
     const body = req.body as any;
 
-    // Enhanced entry logging
-    logger.info({ correlationId, action: 'webhook.received', body: safe(body) }, 'Webhook payload received');
+    // Log the entire webhook payload for debugging
+    logger.info({ correlationId, action: 'webhook.received', body: safe(body) }, '[webhook] event received');
 
     if (!body?.entry) {
       logger.warn({ correlationId, action: 'webhook.ignored', reason: 'no_entry_field' }, 'Webhook payload ignored (no .entry)');
@@ -722,13 +727,12 @@ router.post('/webhook', async (req, res) => {
                   conversation_id: conversation_id_str, 
                   status: 'open', 
                   last_message_at: new Date().toISOString(),
-                  // Now that the column will exist, we can save this crucial information.
                   phone_number_id: metadata.phone_number_id
                 })
                 .select('id')
                 .single();
               conversation_id = insConv.data?.id;
-              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'wa_conv.created', conversation_id: conversation_id_str, phone_number_id }, 'WA conversation created');
+              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'wa_conv.created', conversation_id: conversation_id_str, phone_number_id }, '[webhook] conversation persisted');
             } else {
               await supabase.from('whatsapp_conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation_id);
             }
@@ -743,6 +747,7 @@ router.post('/webhook', async (req, res) => {
 
             const type = msg.type as string;
             const content = msg[type] ? msg[type] : { body: undefined };
+            const timestamp = msg.timestamp;
 
             const messageInsert = await supabase.from('whatsapp_messages').insert({
               restaurant_id,
@@ -754,9 +759,8 @@ router.post('/webhook', async (req, res) => {
               status: 'delivered',
               direction: 'inbound',
               conversation_id: conversation_id_str,
-              // Now that the column will exist, we can save this crucial information.
               phone_number_id,
-              metadata: { timestamp: msg.timestamp }
+              metadata: { timestamp }
             }).select('id').single();
             
             logger.info({ 
@@ -768,7 +772,7 @@ router.post('/webhook', async (req, res) => {
               conversation_id: conversation_id_str,
               phone_number_id,
               message_db_id: messageInsert.data?.id
-            }, 'WA message persisted');
+            }, '[webhook] message persisted');
           }
         } else if (value.statuses && Array.isArray(value.statuses)) {
           for (const status of value.statuses) {
@@ -1064,46 +1068,168 @@ router.get('/numbers', authenticate, requireRestaurant, async (req: Authenticate
 
 // Conversations
 router.get('/conversations', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req as any);
   const restaurant_id = req.user?.restaurant_id;
   const { phone_number_id } = req.query as Record<string, string>;
 
-  let query = supabase
-    .from('whatsapp_conversations')
-    .select('*')
-    .eq('restaurant_id', restaurant_id);
-
-  if (phone_number_id) {
-    query = query.eq('phone_number_id', phone_number_id);
+  if (!restaurant_id) {
+    logger.warn({ correlationId, action: 'whatsapp.conversations', error: 'missing_restaurant_id' }, 'Missing restaurant_id in request');
+    return res.status(400).json({ success: false, error: 'Restaurante não identificado' });
   }
 
-  const { data, error } = await query.order('last_message_at', { ascending: false });
+  try {
+    logger.info({ correlationId, restaurant_id, phone_number_id, action: 'whatsapp.conversations.fetch' }, 'Fetching WhatsApp conversations');
+    
+    // Try to use the stored procedure first
+    try {
+      const { data, error } = await supabase.rpc('get_whatsapp_conversations_with_details', { 
+        p_restaurant_id: restaurant_id,
+        p_phone_number_id: phone_number_id || null
+      });
 
-  if (error) {
-    res.status(500).json({ success: false, error: 'Erro ao listar conversas' });
-    return;
+      if (error) {
+        logger.warn({ correlationId, restaurant_id, action: 'whatsapp.conversations.rpc_error', error: error.message }, 'Error using RPC function, falling back to manual query');
+        throw error; // This will be caught by the outer try-catch and trigger the fallback
+      }
+      
+      logger.info({ correlationId, restaurant_id, action: 'whatsapp.conversations.rpc_success', count: data?.length || 0 }, 'Successfully fetched conversations with RPC');
+      return res.json({ success: true, data });
+    } catch (rpcError) {
+      // Fallback implementation if the function doesn't exist
+      logger.info({ correlationId, restaurant_id, action: 'whatsapp.conversations.using_fallback' }, 'Using fallback query for conversations');
+      
+      // Get base conversations
+      let query = supabase
+        .from('whatsapp_conversations')
+        .select('*')
+        .eq('restaurant_id', restaurant_id);
+
+      if (phone_number_id) {
+        query = query.eq('phone_number_id', phone_number_id);
+      }
+
+      const { data: conversations, error } = await query.order('last_message_at', { ascending: false });
+
+      if (error) {
+        logger.error({ correlationId, restaurant_id, action: 'whatsapp.conversations.fallback_error', error: error.message }, 'Error in fallback query');
+        return res.status(500).json({ success: false, error: 'Erro ao listar conversas' });
+      }
+
+      // Enhance conversations with contact details and last message
+      const enhancedConversations = [];
+      for (const conv of conversations) {
+        // Get contact info
+        let contact = null;
+        if (conv.contact_id) {
+          const { data: contactData } = await supabase
+            .from('whatsapp_contacts')
+            .select('*')
+            .eq('id', conv.contact_id)
+            .single();
+          
+          if (contactData) {
+            contact = {
+              id: contactData.id,
+              name: contactData.name,
+              phone_number: contactData.phone_number,
+              status: contactData.status
+            };
+          }
+        }
+
+        // Get last message
+        const { data: lastMessageData } = await supabase
+          .from('whatsapp_messages')
+          .select('*')
+          .eq('conversation_id', conv.conversation_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const lastMessage = lastMessageData ? {
+          id: lastMessageData.id,
+          content: lastMessageData.content,
+          message_type: lastMessageData.message_type,
+          direction: lastMessageData.direction,
+          created_at: lastMessageData.created_at
+        } : null;
+
+        enhancedConversations.push({
+          ...conv,
+          contact,
+          last_message: lastMessage
+        });
+      }
+
+      logger.info({ correlationId, restaurant_id, action: 'whatsapp.conversations.fallback_success', count: enhancedConversations.length }, 'Successfully fetched conversations with fallback');
+      return res.json({ success: true, data: enhancedConversations });
+    }
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'whatsapp.conversations.exception', error: error.message }, 'Exception fetching conversations');
+    return res.status(500).json({ success: false, error: 'Erro ao listar conversas' });
   }
-  res.json({ success: true, data });
 });
 
 // Messages by conversation
 router.get('/messages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req as any);
   const restaurant_id = req.user?.restaurant_id;
-  const { conversation_id } = req.query as Record<string, string>;
-  if (!conversation_id) {
-    res.status(400).json({ success: false, error: 'conversation_id é obrigatório' });
-    return;
+  const { conversation_id, contact_id } = req.query as Record<string, string>;
+
+  if (!restaurant_id) {
+    logger.warn({ correlationId, action: 'whatsapp.messages', error: 'missing_restaurant_id' }, 'Missing restaurant_id in request');
+    return res.status(400).json({ success: false, error: 'Restaurante não identificado' });
   }
-  const { data, error } = await supabase
-    .from('whatsapp_messages')
-    .select('*')
-    .eq('restaurant_id', restaurant_id)
-    .eq('conversation_id', conversation_id)
-    .order('created_at', { ascending: true });
-  if (error) {
-    res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
-    return;
+
+  try {
+    // We can fetch by either conversation_id or contact_id
+    if (!conversation_id && !contact_id) {
+      logger.warn({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'missing_identifier' }, 'Missing conversation_id or contact_id');
+      return res.status(400).json({ success: false, error: 'É necessário fornecer conversation_id ou contact_id' });
+    }
+
+    let query = supabase
+      .from('whatsapp_messages')
+      .select('*')
+      .eq('restaurant_id', restaurant_id);
+
+    if (conversation_id) {
+      logger.info({ correlationId, restaurant_id, conversation_id, action: 'whatsapp.messages.fetch_by_conv' }, 'Fetching messages by conversation_id');
+      query = query.eq('conversation_id', conversation_id);
+    } else if (contact_id) {
+      // If contact_id is provided, first get the contact's phone number
+      logger.info({ correlationId, restaurant_id, contact_id, action: 'whatsapp.messages.fetch_by_contact' }, 'Fetching messages by contact_id');
+      const { data: contact, error: contactError } = await supabase
+        .from('whatsapp_contacts')
+        .select('phone_number')
+        .eq('id', contact_id)
+        .eq('restaurant_id', restaurant_id)
+        .single();
+
+      if (contactError || !contact) {
+        logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'contact_not_found' }, 'Contact not found');
+        return res.status(404).json({ success: false, error: 'Contato não encontrado' });
+      }
+
+      // Then find the conversation for this contact
+      const conversation_id_str = `wa_${restaurant_id}_${contact.phone_number}`;
+      query = query.eq('conversation_id', conversation_id_str);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: true });
+
+    if (error) {
+      logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages.error', error: error.message }, 'Error fetching messages');
+      return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
+    }
+
+    logger.info({ correlationId, restaurant_id, action: 'whatsapp.messages.success', count: data?.length || 0 }, 'Successfully fetched messages');
+    return res.json({ success: true, data });
+    
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages.exception', error: error.message }, 'Exception fetching messages');
+    return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
   }
-  res.json({ success: true, data });
 });
 
 // 6. Get Contacts/Conversations

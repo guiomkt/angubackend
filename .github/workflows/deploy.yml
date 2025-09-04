@@ -1,39 +1,39 @@
-name: Deploy Front e Back
+# name: Deploy Front e Back
 
-on:
-  push:
-    branches:
-      - main
+# on:
+#   push:
+#     branches:
+#       - main
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Deploy na Droplet
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DO_HOST }}
-          username: root
-          password: ${{ secrets.DO_PASSWORD }}
-          script: |
-            # FRONTEND
-            cd /var/www/front-repo
-            git reset --hard
-            git pull
-            npm install
-            npm run build
-            rm -rf /var/www/front/*
-            cp -r dist/* /var/www/front/
+#     steps:
+#       - name: Deploy na Droplet
+#         uses: appleboy/ssh-action@v1.0.3
+#         with:
+#           host: ${{ secrets.DO_HOST }}
+#           username: root
+#           password: ${{ secrets.DO_PASSWORD }}
+#           script: |
+#             # FRONTEND
+#             cd /var/www/front-repo
+#             git reset --hard
+#             git pull
+#             npm install
+#             npm run build
+#             rm -rf /var/www/front/*
+#             cp -r dist/* /var/www/front/
 
-            # BACKEND
-            cd /var/www/back-repo
-            git reset --hard
-            git pull
-            npm install --production
-            npm run build
-            pm2 restart back || pm2 start dist/index.js --name back
-            pm2 save
+#             # BACKEND
+#             cd /var/www/back-repo
+#             git reset --hard
+#             git pull
+#             npm install --production
+#             npm run build
+#             pm2 restart back || pm2 start dist/index.js --name back
+#             pm2 save
 
-            # NGINX
-            systemctl restart nginx
+#             # NGINX
+#             systemctl restart nginx
