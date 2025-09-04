@@ -234,7 +234,23 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   const token_source = 'bsp_permanent';
   let graphToken = '';
 
+  // Log the request payload to ensure we're being called correctly
+  logger.info({ 
+    action: 'setup.request', 
+    correlationId, 
+    restaurant_id, 
+    payload: { 
+      mode, 
+      client_business_id, 
+      phone_number_id: phone_number_id ? `${phone_number_id.substring(0, 5)}...` : null,
+      display_phone_number: display_phone_number ? maskPhoneNumber(display_phone_number) : null,
+      cc, 
+      phone_number: phone_number ? maskPhoneNumber(phone_number) : null
+    }
+  }, 'Setup request received');
+
   if (!restaurant_id) {
+    logger.error({ action: 'setup.error', correlationId, error: 'missing_restaurant_id' }, 'Missing restaurant_id in setup request');
     res.status(400).json({ success: false, error: 'restaurant_id é obrigatório' });
     return;
   }
@@ -296,6 +312,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     } catch (e: any) {
       const http_status = e?.response?.status || 500;
       const error_message = e?.response?.data?.error?.message || e.message;
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'error', error: error_message, http_status }, 'WABA discovery failed');
       await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message, details: { graph_endpoint: url, http_status, discovery_business_id } });
       throw e;
     }
@@ -355,6 +372,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       } catch (e: any) {
         const http_status = e?.response?.status || 500;
         const error_message = e?.response?.data?.error?.message || e.message;
+        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'error', error: error_message, http_status }, 'Subscription failed');
         await writeIntegrationLog({ restaurant_id, step: 'subscribe', success: false, error_message, details: { graph_endpoint: url, http_status } });
         throw e;
       }
@@ -390,6 +408,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
         logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'already_configured' }, 'Webhook was already configured.');
         await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: true, details: { note: 'already_configured' } });
       } else {
+        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'error', error: error_message, http_status }, 'Webhook configuration failed');
         await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: false, error_message, details: { http_status } });
         throw e;
       }
@@ -397,15 +416,22 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
 
 
     // Persist webhook record idempotently
-    const existingWebhook = await supabase
-      .from('whatsapp_webhooks')
-      .select('id')
-      .eq('restaurant_id', restaurant_id)
-      .maybeSingle();
-    if (existingWebhook.data?.id) {
-      await supabase.from('whatsapp_webhooks').update({ webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true, last_triggered: null }).eq('id', existingWebhook.data.id);
-    } else {
-      await supabase.from('whatsapp_webhooks').insert({ restaurant_id, webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true });
+    try {
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'pending' }, 'Persisting webhook configuration');
+      const existingWebhook = await supabase
+        .from('whatsapp_webhooks')
+        .select('id')
+        .eq('restaurant_id', restaurant_id)
+        .maybeSingle();
+      if (existingWebhook.data?.id) {
+        await supabase.from('whatsapp_webhooks').update({ webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true, last_triggered: null }).eq('id', existingWebhook.data.id);
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'updated', webhook_id: existingWebhook.data.id }, 'Webhook record updated');
+      } else {
+        const insertResult = await supabase.from('whatsapp_webhooks').insert({ restaurant_id, webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true }).select('id');
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'created', webhook_id: insertResult.data?.[0]?.id }, 'Webhook record created');
+      }
+    } catch (e: any) {
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'error', error: e.message }, 'Failed to persist webhook record');
     }
 
     // Ensure connection status is active when we have a phone number resolved and webhook configured
@@ -414,68 +440,120 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     }
 
     // Upsert whatsapp_business_integrations by restaurant_id
-    const current = await supabase
-      .from('whatsapp_business_integrations')
-      .select('*')
-      .eq('restaurant_id', restaurant_id)
-      .maybeSingle();
-
-    const insertOrUpdate = {
-      restaurant_id,
-      business_account_id: resolved_business_id || waba_id || 'unknown',
-      phone_number_id: resolved_phone_number_id,
-      phone_number: resolved_display_phone_number,
-      webhook_url,
-      webhook_verify_token: WEBHOOK_VERIFY_TOKEN,
-      connection_status,
-      metadata: { mode, waba_id }
-    } as any;
-
-    logger.info({ action: 'setup.persist.attempt', restaurant_id, payload: insertOrUpdate }, 'Attempting to persist whatsapp_business_integrations');
-
+    logger.info({ correlationId, restaurant_id, action: 'setup', step: 'integration_persist', status: 'pending' }, 'Beginning integration persistence');
     try {
+      const current = await supabase
+        .from('whatsapp_business_integrations')
+        .select('*')
+        .eq('restaurant_id', restaurant_id)
+        .maybeSingle();
+
+      const insertOrUpdate = {
+        restaurant_id,
+        business_account_id: resolved_business_id || waba_id || 'unknown',
+        phone_number_id: resolved_phone_number_id,
+        phone_number: resolved_display_phone_number,
+        webhook_url,
+        webhook_verify_token: WEBHOOK_VERIFY_TOKEN,
+        connection_status,
+        metadata: { mode, waba_id }
+      } as any;
+
+      logger.info({ 
+        correlationId, 
+        action: 'setup.persist.attempt', 
+        restaurant_id, 
+        payload: {
+          restaurant_id,
+          business_account_id: insertOrUpdate.business_account_id,
+          phone_number_id: insertOrUpdate.phone_number_id ? `${insertOrUpdate.phone_number_id.substring(0, 5)}...` : null,
+          phone_number: insertOrUpdate.phone_number ? maskPhoneNumber(insertOrUpdate.phone_number) : null,
+          connection_status: insertOrUpdate.connection_status
+        }
+      }, 'Attempting to persist whatsapp_business_integrations');
+
+      let persistResult;
       if (current.data) {
-        const { error: upErr } = await supabase
+        const { data, error: upErr } = await supabase
           .from('whatsapp_business_integrations')
           .update(insertOrUpdate)
-          .eq('id', current.data.id);
+          .eq('id', current.data.id)
+          .select('id');
         if (upErr) {
-          logger.error({ action: 'setup.persist.error', restaurant_id, error: upErr.message }, 'Failed to update integration row');
+          logger.error({ 
+            correlationId,
+            action: 'setup.persist.error', 
+            restaurant_id, 
+            error: upErr.message, 
+            details: upErr
+          }, 'Failed to update integration row');
           throw upErr;
         }
+        persistResult = data?.[0]?.id || current.data.id;
+        logger.info({ correlationId, action: 'setup.persist.updated', restaurant_id, integration_id: persistResult }, 'Integration row updated successfully');
       } else {
-        const { error: insErr } = await supabase
+        const { data, error: insErr } = await supabase
           .from('whatsapp_business_integrations')
-          .insert(insertOrUpdate);
+          .insert(insertOrUpdate)
+          .select('id');
         if (insErr) {
-          logger.error({ action: 'setup.persist.error', restaurant_id, error: insErr.message }, 'Failed to insert integration row');
+          logger.error({ 
+            correlationId,
+            action: 'setup.persist.error', 
+            restaurant_id, 
+            error: insErr.message,
+            details: insErr
+          }, 'Failed to insert integration row');
           throw insErr;
         }
+        persistResult = data?.[0]?.id;
+        logger.info({ correlationId, action: 'setup.persist.inserted', restaurant_id, integration_id: persistResult }, 'Integration row inserted successfully');
       }
-      logger.info({ action: 'setup.persist.success', restaurant_id }, 'Integration row persisted');
+      logger.info({ correlationId, action: 'setup.persist.success', restaurant_id, integration_id: persistResult }, 'Integration row persisted');
     } catch (persistError: any) {
       // Surface persistence failures
+      logger.error({ 
+        correlationId,
+        action: 'setup.persist.failed', 
+        restaurant_id, 
+        error: persistError.message,
+        details: {
+          code: persistError.code,
+          hint: persistError.hint,
+          details: persistError.details
+        }
+      }, 'Failed to persist WhatsApp integration');
       throw persistError;
     }
 
     // Update signup state
-    const signupState = await supabase
-      .from('whatsapp_signup_states')
-      .select('id')
-      .eq('restaurant_id', restaurant_id)
-      .maybeSingle();
+    try {
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'pending' }, 'Updating signup state');
+      
+      const signupState = await supabase
+        .from('whatsapp_signup_states')
+        .select('id')
+        .eq('restaurant_id', restaurant_id)
+        .maybeSingle();
 
-    const signupPayload: any = {
-      restaurant_id,
-      status: connection_status === 'active' ? 'completed' : 'pending_verification',
-      waba_id: waba_id,
-      phone_number_id: resolved_phone_number_id,
-      phone_number: resolved_display_phone_number,
-      business_id: resolved_business_id
-    };
+      const signupPayload: any = {
+        restaurant_id,
+        status: connection_status === 'active' ? 'completed' : 'pending_verification',
+        waba_id: waba_id,
+        phone_number_id: resolved_phone_number_id,
+        phone_number: resolved_display_phone_number,
+        business_id: resolved_business_id
+      };
 
-    if (signupState.data?.id) {
-      await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
+      if (signupState.data?.id) {
+        await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'updated' }, 'Signup state updated');
+      } else {
+        const insertResult = await supabase.from('whatsapp_signup_states').insert(signupPayload).select('id');
+        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'created', signup_state_id: insertResult.data?.[0]?.id }, 'Signup state created');
+      }
+    } catch (e: any) {
+      logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'error', error: e.message }, 'Failed to update signup state (non-fatal)');
     }
 
     // Read back persisted integration row for structured logging
@@ -485,13 +563,19 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       .eq('restaurant_id', restaurant_id)
       .maybeSingle();
 
-    logger.info({ action: "setup.persist", restaurant_id, integration: {
-      restaurant_id,
-      waba_id,
-      phone_number_id: resolved_phone_number_id,
-      display_phone_number: resolved_display_phone_number,
-      connection_status
-    }, db_row: persistedInteg }, "Integration state persisted successfully.");
+    logger.info({ 
+      correlationId,
+      action: "setup.persist", 
+      restaurant_id, 
+      integration: {
+        restaurant_id,
+        waba_id,
+        phone_number_id: resolved_phone_number_id ? `${resolved_phone_number_id.substring(0, 5)}...` : null,
+        display_phone_number: resolved_display_phone_number ? maskPhoneNumber(resolved_display_phone_number) : null,
+        connection_status
+      }, 
+      db_row_exists: !!persistedInteg 
+    }, "Integration state persisted successfully.");
 
     res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
   } catch (error: any) {
@@ -910,6 +994,7 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
 
 // Status endpoint
 router.get('/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req as any);
   const authHeader = req.headers['authorization'] || '';
   const tokenFingerprint = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
     ? `${authHeader.slice(7, 12)}...`
@@ -917,63 +1002,161 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
   const restaurant_id = req.user?.restaurant_id;
 
   if (!restaurant_id) {
-    logger.warn({ action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id: null }, 'Unauthorized status request - missing restaurant_id');
+    logger.warn({ correlationId, action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id: null }, 'Unauthorized status request - missing restaurant_id');
     return res.status(401).json({ success: false, error: 'Unauthorized: missing restaurant context' });
   }
 
-  logger.info({ action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id }, 'Status request auth context');
+  logger.info({ correlationId, action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id }, 'Status request auth context');
 
-  const { data } = await supabase
-    .from('whatsapp_business_integrations')
-    .select('*')
-    .eq('restaurant_id', restaurant_id)
-    .maybeSingle();
+  try {
+    // First check if the restaurant exists
+    const { data: restaurant, error: restaurantError } = await supabase
+      .from('restaurants')
+      .select('id')
+      .eq('id', restaurant_id)
+      .maybeSingle();
+    
+    if (restaurantError || !restaurant) {
+      logger.warn({ correlationId, action: "status.read", restaurant_id, error: restaurantError?.message || "not_found", reason: 'invalid_restaurant_id' }, "Restaurant ID not found in database");
+      return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
+    }
 
-  if (!data) {
-    logger.info({ action: "status.read", restaurant_id, reason: 'missing_integration_row' }, "No integration found for restaurant, returning not_connected.");
-    return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
-  }
-  
-  const waba_id = (data.metadata as any)?.waba_id || null;
-  let returned_status = data.connection_status || 'not_connected';
-  let numbers: PhoneNumberInfo[] = [];
-  
-  if (returned_status === 'active') {
-    if (waba_id) {
-      try {
-        // Fetch all associated numbers from Graph API
-        const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-        const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
-        numbers = (resp.data?.data || []).map((n) => ({
-          phone_number_id: n.id,
-          display_phone_number: n.display_phone_number,
-          status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
-        }));
-      } catch (error) {
-        logger.error({ restaurant_id, action: "status_numbers", error: (error as any)?.message }, "Error fetching phone numbers");
+    // Now get the integration
+    const { data, error } = await supabase
+      .from('whatsapp_business_integrations')
+      .select('*')
+      .eq('restaurant_id', restaurant_id)
+      .maybeSingle();
+
+    logger.info({ 
+      correlationId, 
+      action: "status.query", 
+      restaurant_id, 
+      query_error: error?.message, 
+      row_exists: !!data,
+      row_id: data?.id
+    }, "WhatsApp integration query executed");
+
+    if (error) {
+      logger.error({ correlationId, action: "status.read", restaurant_id, error: error.message, reason: 'db_query_error' }, "Error querying WhatsApp integration");
+      return res.json({ success: true, data: { status: 'not_connected', numbers: [], error: 'db_error' } });
+    }
+
+    if (!data) {
+      logger.info({ 
+        correlationId, 
+        action: "status.read", 
+        restaurant_id, 
+        reason: 'missing_integration_row',
+        // Check if there are any OAuth tokens for this restaurant
+        restaurant_has_oauth: async () => {
+          const { count } = await supabase
+            .from('oauth_tokens')
+            .select('id', { count: 'exact', head: true })
+            .eq('restaurant_id', restaurant_id)
+            .eq('provider', 'meta');
+          return count && count > 0;
+        }
+      }, "No integration found for restaurant, returning not_connected.");
+      
+      return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
+    }
+    
+    const waba_id = (data.metadata as any)?.waba_id || null;
+    let returned_status = data.connection_status || 'not_connected';
+    let numbers: PhoneNumberInfo[] = [];
+    
+    logger.info({ 
+      correlationId, 
+      action: "status.integration_found", 
+      restaurant_id, 
+      connection_status: returned_status,
+      integration_id: data.id,
+      waba_id: waba_id,
+      phone_number_id: data.phone_number_id ? `${data.phone_number_id.substring(0, 5)}...` : null,
+      created_at: data.created_at,
+      updated_at: data.updated_at
+    }, "Found WhatsApp integration record");
+    
+    if (returned_status === 'active') {
+      if (waba_id) {
+        try {
+          // Fetch all associated numbers from Graph API
+          const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+          logger.info({ correlationId, action: "status.fetch_numbers", restaurant_id, waba_id, graph_endpoint: url }, "Fetching phone numbers from Graph API");
+          
+          const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
+          numbers = (resp.data?.data || []).map((n) => ({
+            phone_number_id: n.id,
+            display_phone_number: n.display_phone_number,
+            status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
+          }));
+          
+          logger.info({ 
+            correlationId, 
+            action: "status.fetch_numbers.success", 
+            restaurant_id, 
+            numbers_count: numbers.length 
+          }, "Successfully fetched phone numbers from Graph API");
+        } catch (error: any) {
+          logger.error({ 
+            correlationId,
+            restaurant_id, 
+            action: "status.fetch_numbers.error", 
+            error: error.message,
+            status_code: error.response?.status,
+            error_details: error.response?.data?.error
+          }, "Error fetching phone numbers from Graph API");
+        }
+      }
+      // Always include DB number as a fallback if none gathered from Graph
+      if ((!numbers || numbers.length === 0) && data.phone_number_id && data.phone_number) {
+        logger.info({ correlationId, action: "status.using_db_number", restaurant_id }, "No numbers from Graph API, using DB stored number");
+        numbers = [{
+          phone_number_id: data.phone_number_id,
+          display_phone_number: data.phone_number,
+          status: 'active'
+        }];
       }
     }
-    // Always include DB number as a fallback if none gathered from Graph
-    if ((!numbers || numbers.length === 0) && data.phone_number_id && data.phone_number) {
-      numbers = [{
-        phone_number_id: data.phone_number_id,
-        display_phone_number: data.phone_number,
-        status: 'active'
-      }];
-    }
-  }
 
-  logger.info({ action: "status.read", restaurant_id, db_row: data, returned_status, numbers_count: numbers.length, waba_id, phone_numbers_from_api: numbers }, "WhatsApp status requested - detailed debug info");
-
-  return res.json({
-    success: true,
-    data: {
-      status: returned_status,
-      restaurant_id: data.restaurant_id,
-      numbers,
+    logger.info({ 
+      correlationId,
+      action: "status.read", 
+      restaurant_id, 
+      db_row_id: data.id, 
+      returned_status, 
+      numbers_count: numbers.length, 
       waba_id
-    }
-  });
+    }, "WhatsApp status requested - detailed info");
+
+    return res.json({
+      success: true,
+      data: {
+        status: returned_status,
+        restaurant_id: data.restaurant_id,
+        numbers,
+        waba_id
+      }
+    });
+  } catch (error: any) {
+    logger.error({ 
+      correlationId, 
+      action: "status.read.error", 
+      restaurant_id, 
+      error: error.message,
+      stack: error.stack
+    }, "Unexpected error in status endpoint");
+    
+    return res.json({
+      success: true,
+      data: {
+        status: 'not_connected',
+        numbers: [],
+        error: 'unexpected_error'
+      }
+    });
+  }
 });
 
 // Get connected numbers
