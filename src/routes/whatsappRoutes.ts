@@ -408,6 +408,11 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       await supabase.from('whatsapp_webhooks').insert({ restaurant_id, webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true });
     }
 
+    // Ensure connection status is active when we have a phone number resolved and webhook configured
+    if (resolved_phone_number_id) {
+      connection_status = 'active';
+    }
+
     // Upsert whatsapp_business_integrations by restaurant_id
     const current = await supabase
       .from('whatsapp_business_integrations')
@@ -459,7 +464,13 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       .eq('restaurant_id', restaurant_id)
       .maybeSingle();
 
-    logger.info({ action: "setup.persist", restaurant_id, connection_status, db_row: persistedInteg, payload: { waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number } }, "Integration state persisted successfully.");
+    logger.info({ action: "setup.persist", restaurant_id, integration: {
+      restaurant_id,
+      waba_id,
+      phone_number_id: resolved_phone_number_id,
+      display_phone_number: resolved_display_phone_number,
+      connection_status
+    }, db_row: persistedInteg }, "Integration state persisted successfully.");
 
     res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
   } catch (error: any) {
@@ -937,9 +948,9 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     success: true,
     data: {
       status: returned_status,
+      restaurant_id: data.restaurant_id,
       numbers,
-      waba_id,
-      restaurant_id: data.restaurant_id
+      waba_id
     }
   });
 });
