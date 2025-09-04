@@ -130,35 +130,51 @@ router.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query as Record<string, string>;
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
-  const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  // Define the target origin for postMessage
+  const frontendUrl = process.env.FRONTEND_URL || 'https://www.angu.ai';
+  
+  const closePopupScript = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
   <title>WhatsApp OAuth Complete</title>
   <script>
-    let sent = false;
-    function notifyAndClose() {
-      if (window.opener && !sent) {
-        for (let i = 0; i < 5; i++) {
-          setTimeout(() => {
-            window.opener.postMessage({ type: "META_OAUTH_SUCCESS" }, "*");
-          }, i * 100);
-        }
-        sent = true;
-        // LocalStorage fallback for main window polling
-        try {
-          window.localStorage.setItem('whatsapp_oauth_success', Date.now().toString());
-        } catch (e) {}
-        setTimeout(() => window.close(), 600);
-      } else {
-        document.write("✅ WhatsApp connected, you can close this window.");
+    (function() {
+      console.log("Attempting to notify opener at target origin:", "${frontendUrl}");
+
+      // The message expected by the frontend listener
+      const message = "META_OAUTH_SUCCESS";
+      
+      // LocalStorage fallback for main window polling
+      try {
+        window.localStorage.setItem('whatsapp_oauth_success', Date.now().toString());
+        console.log("Set localStorage fallback flag.");
+      } catch (e) {
+        console.error("Failed to set localStorage flag:", e);
       }
-    }
-    notifyAndClose();
+
+      if (window.opener) {
+        // Use the specific frontend URL for security
+        window.opener.postMessage(message, "${frontendUrl}");
+        console.log("postMessage sent to opener.");
+        
+        // Give the message time to be processed before closing the window
+        setTimeout(() => {
+          window.close();
+          console.log("Popup window closed.");
+        }, 500); // 500ms delay
+      } else {
+        console.warn("window.opener is not available.");
+        document.body.innerHTML = '<h1>✅ Conexão bem-sucedida!</h1><p>Você pode fechar esta janela.</p>';
+      }
+    })();
   </script>
-  </head>
-  <body>
-  <h3>OAuth Authentication Complete</h3>
-  <p>WhatsApp authentication successful. This window should close automatically.</p>
-  <p>If this window doesn't close, you can close it manually and continue in the main application.</p>
-  </body></html>`;
+</head>
+<body>
+  <h3>Autenticação OAuth Concluída</h3>
+  <p>A autenticação do WhatsApp foi bem-sucedida. Esta janela deve fechar automaticamente.</p>
+</body>
+</html>`;
 
   try {
     if (!code || !state) {
