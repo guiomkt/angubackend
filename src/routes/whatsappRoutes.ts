@@ -606,6 +606,93 @@ router.post('/webhook', async (req, res) => {
               await supabase.from('whatsapp_contacts').update({ name: contact_name, last_message_at: new Date().toISOString() }).eq('id', contact_id);
             }
 
+            // Sync with chat_* tables
+            try {
+              let chat_contact_id: string | null = null;
+
+              const { data: existingChatContact, error: selectError } = await supabase
+                .from('chat_contacts')
+                .select('id, unread_count')
+                .eq('restaurant_id', restaurant_id)
+                .eq('phone_number', wa_id)
+                .maybeSingle();
+
+              if (selectError) throw selectError;
+
+              if (!existingChatContact) {
+                const { data: newContact, error: insertError } = await supabase
+                  .from('chat_contacts')
+                  .insert({
+                    restaurant_id,
+                    phone_number: wa_id,
+                    name: contact_name,
+                    status: 'active',
+                    customer_type: 'new',
+                    last_message_at: new Date().toISOString(),
+                    unread_count: 1,
+                  })
+                  .select('id')
+                  .single();
+                if (insertError) throw insertError;
+                chat_contact_id = newContact.id;
+                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact_created', contact_id: chat_contact_id }, 'Synced new chat contact');
+              } else {
+                chat_contact_id = existingChatContact.id;
+                const { error: updateError } = await supabase
+                  .from('chat_contacts')
+                  .update({
+                    name: contact_name,
+                    last_message_at: new Date().toISOString(),
+                    unread_count: (existingChatContact.unread_count || 0) + 1,
+                    status: 'active'
+                  })
+                  .eq('id', chat_contact_id);
+                if (updateError) throw updateError;
+              }
+
+              if (chat_contact_id) {
+                const { data: existingChatConv, error: convSelectError } = await supabase
+                  .from('chat_conversations')
+                  .select('id')
+                  .eq('restaurant_id', restaurant_id)
+                  .eq('contact_id', chat_contact_id)
+                  .maybeSingle();
+                
+                if (convSelectError) throw convSelectError;
+
+                if (!existingChatConv) {
+                  const { error: insertError } = await supabase.from('chat_conversations').insert({
+                    restaurant_id,
+                    contact_id: chat_contact_id,
+                    status: 'open',
+                  });
+                  if (insertError) throw insertError;
+                } else {
+                  const { error: updateError } = await supabase.from('chat_conversations').update({
+                    updated_at: new Date().toISOString(),
+                    status: 'open'
+                  }).eq('id', existingChatConv.id);
+                  if (updateError) throw updateError;
+                }
+
+                const type = msg.type as string;
+                const typeContent = msg[type] || {};
+                const contentText = typeContent.body || typeContent.caption || `[${type}]`;
+
+                const { error: messageInsertError } = await supabase.from('chat_messages').insert({
+                  restaurant_id,
+                  sender_id: chat_contact_id,
+                  sender_type: 'customer',
+                  content: contentText,
+                  content_type: type,
+                  is_read: false,
+                });
+                if (messageInsertError) throw messageInsertError;
+              }
+            } catch (syncError: any) {
+              logger.error({ correlationId, restaurant_id, action: 'webhook', step: 'chat_sync_error', wa_id, error: syncError.message }, 'Failed to sync with chat tables');
+            }
+
             // Upsert conversation (unique by conversation_id)
             const conversation_id_str = `wa_${restaurant_id}_${wa_id}`;
             const existingConv = await supabase
