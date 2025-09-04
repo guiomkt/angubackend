@@ -133,12 +133,21 @@ router.get('/oauth/callback', async (req, res) => {
   const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
   <title>WhatsApp OAuth Complete</title>
   <script>
-    if (window.opener) {
-      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
-      window.close();
-    } else {
-      document.write('✅ WhatsApp connected, you can close this window.');
+    let sent = false;
+    function notifyAndClose() {
+      if (window.opener && !sent) {
+        for (let i = 0; i < 5; i++) {
+          setTimeout(() => {
+            window.opener.postMessage({ type: "META_OAUTH_SUCCESS" }, "*");
+          }, i * 100);
+        }
+        sent = true;
+        setTimeout(() => window.close(), 600);
+      } else {
+        document.write("✅ WhatsApp connected, you can close this window.");
+      }
     }
+    notifyAndClose();
   </script>
   </head>
   <body>
