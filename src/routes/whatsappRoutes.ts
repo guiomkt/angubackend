@@ -995,13 +995,12 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
   logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
 
   try {
-    // As we cannot alter the chat_contacts table, we will join through whatsapp_conversations
-    // which has the phone_number_id we need to filter by.
+    // Correctly join through whatsapp_conversations to get whatsapp_contacts
     const { data: conversations, error: convError } = await supabase
       .from('whatsapp_conversations')
       .select(`
         contact_id,
-        chat_contacts ( * )
+        whatsapp_contacts ( * )
       `)
       .eq('restaurant_id', restaurant_id)
       .eq('phone_number_id', phone_number_id);
@@ -1011,8 +1010,8 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
       return res.status(500).json({ success: false, error: 'Erro ao buscar conversas' });
     }
 
-    // Extract the contact details from the join.
-    const contacts = conversations.map(c => c.chat_contacts).filter(Boolean);
+    // Extract the contact details from the join, ensuring no nulls are returned
+    const contacts = conversations.map(c => c.whatsapp_contacts).filter(Boolean);
 
     logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB via conversations');
     return res.json({ success: true, data: contacts });
@@ -1020,6 +1019,48 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'get_contacts.error', error: error?.message }, 'Failed to get contacts');
     return res.status(500).json({ success: false, error: 'Erro ao buscar contatos' });
+  }
+});
+
+
+// 8. Disconnect/Forget Integration
+router.post('/disconnect', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req);
+  const restaurant_id = req.user?.restaurant_id;
+
+  if (!restaurant_id) {
+    return res.status(400).json({ success: false, error: 'Restaurante não identificado' });
+  }
+
+  logger.warn({ correlationId, restaurant_id, action: 'disconnect.start' }, 'Starting WhatsApp disconnection process');
+
+  try {
+    // Delete in order to respect foreign key constraints
+    
+    // 1. Delete integration config
+    const { error: integError } = await supabase
+      .from('whatsapp_business_integrations')
+      .delete()
+      .eq('restaurant_id', restaurant_id);
+
+    if (integError) throw new Error(`Failed to delete integration: ${integError.message}`);
+    logger.info({ correlationId, restaurant_id, action: 'disconnect.step', step: 'delete_integration' }, 'Integration config deleted');
+
+    // 2. Delete OAuth tokens
+    const { error: tokenError } = await supabase
+      .from('oauth_tokens')
+      .delete()
+      .eq('restaurant_id', restaurant_id);
+
+    if (tokenError) throw new Error(`Failed to delete oauth tokens: ${tokenError.message}`);
+    logger.info({ correlationId, restaurant_id, action: 'disconnect.step', step: 'delete_tokens' }, 'OAuth tokens deleted');
+    
+    logger.info({ correlationId, restaurant_id, action: 'disconnect.success' }, 'WhatsApp disconnection successful');
+    return res.json({ success: true, message: 'Integração removida com sucesso' });
+
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'disconnect.error', error: error?.message }, 'Failed to disconnect WhatsApp integration');
+    return res.status(500).json({ success: false, error: 'Erro ao remover integração' });
   }
 });
 
