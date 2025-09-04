@@ -445,6 +445,8 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
     }
 
+    logger.info({ action: "setup", step: "persist", restaurant_id, connection_status, waba_id, phone_number_id: resolved_phone_number_id }, "Integration state persisted successfully.");
+
     res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
@@ -817,11 +819,14 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
   }
   
   const waba_id = (data.metadata as any)?.waba_id || null;
+  const returned_status = data.connection_status || 'not_connected';
+
+  logger.info({ action: "status", restaurant_id, db_row: data, returned_status }, "WhatsApp status requested.");
 
   return res.json({
     success: true,
     data: {
-      status: data.connection_status || 'not_connected',
+      status: returned_status,
       waba_id,
       phone_number_id: data.phone_number_id,
       display_phone_number: data.phone_number,
