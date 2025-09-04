@@ -132,95 +132,18 @@ router.get('/oauth/callback', async (req, res) => {
   const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
   <title>WhatsApp OAuth Complete</title>
   <script>
-    // Log for debugging
-    console.log("OAuth callback page loaded");
-    
-    function sendSuccessMessage() {
-      try {
-        console.log("Attempting to post META_OAUTH_SUCCESS");
-        // Try to notify the opener with more explicit error handling
-        if (window.opener) {
-          console.log("Window opener found, posting message");
-          
-          // Try first with explicit origin (if in production)
-          try {
-            const targetOrigin = window.location.origin || "*";
-            console.log("Posting with targetOrigin:", targetOrigin);
-            window.opener.postMessage({ 
-              type: 'META_OAUTH_SUCCESS', 
-              timestamp: new Date().toISOString(),
-              status: 'success'
-            }, targetOrigin);
-          } catch (originErr) {
-            console.error("Error with specific origin, trying with *:", originErr);
-            // Fallback to * for targetOrigin
-            window.opener.postMessage({ 
-              type: 'META_OAUTH_SUCCESS', 
-              timestamp: new Date().toISOString(),
-              status: 'success'
-            }, '*');
-          }
-          
-          console.log("Message posted successfully");
-          
-          // Try a second time after a short delay (to handle race conditions)
-          setTimeout(function() {
-            try {
-              window.opener.postMessage({ 
-                type: 'META_OAUTH_SUCCESS', 
-                timestamp: new Date().toISOString(),
-                status: 'success',
-                retry: true
-              }, '*');
-              console.log("Sent follow-up message");
-            } catch (e) {
-              console.error("Failed to send follow-up message:", e);
-            }
-          }, 500);
-        } else {
-          console.error("No window.opener found!");
-          document.getElementById('status').innerHTML = 'Error: No opener window found!';
-        }
-      } catch (e) {
-        console.error("Error posting message:", e);
-        document.getElementById('status').innerHTML = 'Error: ' + e.message;
-      }
-      
-      // Try to close the window regardless of success
-      setTimeout(function() {
-        try { 
-          window.close(); 
-        } catch (e) { 
-          console.error("Could not close window:", e); 
-        }
-      }, 1000);
+    if (window.opener) {
+      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
+      window.close();
+    } else {
+      document.write('✅ WhatsApp connected, you can close this window.');
     }
-    
-    // Run the function when DOM is ready
-    document.addEventListener('DOMContentLoaded', function() {
-      console.log("DOM loaded, sending message...");
-      sendSuccessMessage();
-    });
-    
-    // Also try immediately (some browsers may work better this way)
-    sendSuccessMessage();
   </script>
   </head>
   <body>
   <h3>OAuth Authentication Complete</h3>
   <p>WhatsApp authentication successful. This window should close automatically.</p>
-  <p id="status">Notifying application...</p>
   <p>If this window doesn't close, you can close it manually and continue in the main application.</p>
-  <script>
-    // One more attempt, from the body
-    console.log("Running script from body");
-    if (typeof sendSuccessMessage === 'function') {
-      console.log("Calling sendSuccessMessage from body");
-      sendSuccessMessage();
-    } else {
-      console.error("sendSuccessMessage not found in body");
-    }
-  </script>
   </body></html>`;
 
   try {
@@ -250,8 +173,6 @@ router.get('/oauth/callback', async (req, res) => {
 
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
-      
-      // Even if duplicate, send the success script to help overcome postMessage issues
       logger.info({ correlationId, action: 'oauth_callback.sending_response', status: 'duplicate' }, '🟢 Sending close popup script for duplicate nonce');
       res.send(closePopupScript);
       logger.info({ correlationId, action: 'oauth_callback.response_sent', status: 'duplicate' }, '✅ Close popup script sent for duplicate nonce');
@@ -313,48 +234,8 @@ router.get('/oauth/callback', async (req, res) => {
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
     // Send response to close the popup and notify the opener
-    logger.info({ correlationId, action: 'oauth_callback.sending_response', restaurant_id }, '🟢 About to send close popup script');
-    res.send(closePopupScript);
     logger.info({ correlationId, action: 'oauth_callback.response_sent', restaurant_id }, '✅ Close popup script sent to client');
-    
-    // Also try to notify the setup endpoint directly if the postMessage fails
-    try {
-      logger.info({ correlationId, action: 'oauth_callback.direct_setup_attempt', restaurant_id }, '🟡 Attempting direct setup call as fallback');
-      
-      // This is intentionally not awaited - we don't want to block the response
-      // It's just a backup in case the postMessage fails
-      setTimeout(async () => {
-        try {
-          const setupResponse = await axios.post(`${API_BASE_URL}/api/whatsapp/setup`, {
-            mode: 'auto',
-            restaurant_id,
-            direct_trigger: true
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Direct-Trigger': 'true',
-              'X-Correlation-Id': correlationId
-            }
-          });
-          logger.info({ 
-            correlationId, 
-            action: 'oauth_callback.direct_setup_success', 
-            restaurant_id,
-            http_status: setupResponse.status
-          }, '✅ Direct setup call succeeded');
-        } catch (setupError: any) {
-          logger.error({ 
-            correlationId, 
-            action: 'oauth_callback.direct_setup_error', 
-            restaurant_id,
-            error: setupError?.message,
-            status: setupError?.response?.status
-          }, '🔴 Direct setup call failed');
-        }
-      }, 1000);
-    } catch (directCallError: any) {
-      logger.error({ correlationId, action: 'oauth_callback.direct_setup_exception', restaurant_id, error: directCallError.message }, '🔴 Exception in direct setup call');
-    }
+    res.send(closePopupScript);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
