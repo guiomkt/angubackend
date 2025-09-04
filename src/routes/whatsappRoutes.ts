@@ -1038,23 +1038,20 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
   }
 
   try {
-    // We can fetch by either conversation_id or contact_id
     if (!conversation_id) {
       logger.warn({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'missing_identifier' }, 'Missing conversation_id');
       return res.status(400).json({ success: false, error: 'É necessário fornecer conversation_id' });
     }
 
-    let query = supabase
+    const { data, error } = await supabase
       .from('whatsapp_messages')
       .select('*')
       .eq('restaurant_id', restaurant_id)
       .eq('conversation_id', conversation_id)
       .order('created_at', { ascending: true });
 
-    const { data, error } = await query;
-
     if (error) {
-      logger.error({ correlationId, action: 'whatsapp.messages.error', error: error.message }, 'Error fetching messages');
+      logger.error({ correlationId, action: 'messages.db_error', error, stack: error.stack }, 'Error fetching messages');
       return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
     }
 
@@ -1063,7 +1060,7 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
         logger.info({ correlationId }, '[messages] found 0 messages');
     }
 
-    res.json({ success: true, data });
+    return res.json({ success: true, data });
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages.exception', error: error.message }, 'Exception fetching messages');
     return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
