@@ -138,7 +138,8 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
 
     // Discover WABA
     const wabaUrl = `${WHATSAPP_API_URL}/${discovery_business_id}/owned_whatsapp_business_accounts`;
-    const wabaResp = await axios.get(wabaUrl, { params: { access_token: graphToken } });
+    // Add explicit type for the axios response to fix TS2339
+    const wabaResp = await axios.get<{ data: { id: string }[] }>(wabaUrl, { params: { access_token: graphToken } });
     waba_id = wabaResp.data?.data?.[0]?.id || null;
 
     if (!waba_id) {
@@ -255,10 +256,10 @@ router.get('/oauth/callback', async (req, res) => {
       .eq('restaurant_id', restaurant_id)
       .eq('metadata->>nonce', nonce)
       .maybeSingle();
-
+    
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
-      logger.info({ correlationId, action: 'oauth_callback.redirecting', status: 'duplicate' }, 'Redirecting for duplicate nonce');
+      // No setup is needed here, just close the popup.
       return res.send(closePopupScript);
     }
 
