@@ -558,330 +558,99 @@ router.post('/webhook', async (req, res) => {
   try {
     const body = req.body as any;
 
-    // Log the entire webhook payload for debugging
-    logger.info({ correlationId, action: 'webhook.received', body: safe(body) }, '[webhook] event received');
+    logger.info({ correlationId, action: 'webhook.received' }, `[webhook] raw body: ${JSON.stringify(body, null, 2)}`);
 
     if (!body?.entry) {
-      logger.warn({ correlationId, action: 'webhook.ignored', reason: 'no_entry_field' }, 'Webhook payload ignored (no .entry)');
+      logger.warn({ correlationId, action: 'webhook.skipped', reason: 'no_entry_field' }, '[webhook] skipped: payload has no .entry field');
       res.status(200).json({ received: true });
       return;
     }
 
     for (const entry of body.entry) {
-      const waba_id = entry.id;
       for (const change of entry.changes || []) {
-        const field = change.field;
         const value = change.value || {};
 
-        if (field === 'messages' && value.messages && Array.isArray(value.messages)) {
-          const metadata = value.metadata || {};
-          const phone_number_id = metadata.phone_number_id;
+        if (change.field === 'messages' && value.messages && Array.isArray(value.messages)) {
+          logger.info({ correlationId, action: 'webhook.iteration' }, `[webhook] iterating entry -> changes -> messages. Found ${value.messages.length} message(s).`);
           
-          logger.info({ 
-            correlationId, 
-            waba_id, 
-            phone_number_id, 
-            action: 'webhook.messages', 
-            message_count: value.messages.length 
-          }, '[webhook] Processing message event');
-          
-          // Find restaurant by phone_number_id
-          const integ = await supabase
-            .from('whatsapp_business_integrations')
-            .select('restaurant_id, phone_number')
-            .eq('phone_number_id', phone_number_id)
-            .maybeSingle();
-
-          const restaurant_id = integ.data?.restaurant_id;
-          const our_phone = integ.data?.phone_number;
-
-          await writeConnectionLog({ restaurant_id: restaurant_id || undefined, waba_id, action: 'messages', details: { count: value.messages.length } });
-
-          if (!restaurant_id) {
-            logger.warn({ 
-              correlationId, 
-              action: 'webhook.ignored', 
-              reason: 'no_restaurant_found', 
-              waba_id, 
-              phone_number_id 
-            }, '[webhook] Message ignored - no restaurant found for phone_number_id');
-            continue;
-          }
-          
-          logger.info({
-            correlationId,
-            restaurant_id,
-            phone_number_id,
-            action: 'webhook.restaurant_found'
-          }, '[webhook] Found matching restaurant for phone_number_id');
-
           for (const msg of value.messages) {
-            const wa_id = (value.contacts && value.contacts[0]?.wa_id) || msg.from;
-            const contact_name = (value.contacts && value.contacts[0]?.profile?.name) || null;
-            
-            logger.info({
-              correlationId,
-              restaurant_id,
-              action: 'webhook.processing_message',
-              message_id: msg.id,
-              from: wa_id,
-              message_type: msg.type,
-              timestamp: msg.timestamp
-            }, '[webhook] Processing individual message');
+            const metadata = value.metadata || {};
+            const phone_number_id = metadata.phone_number_id;
 
-            // Upsert contact
-            const existingContact = await supabase
-              .from('whatsapp_contacts')
-              .select('id')
-              .eq('restaurant_id', restaurant_id)
-              .eq('phone_number', wa_id)
-              .maybeSingle();
-
-            let contact_id = existingContact.data?.id;
-            if (!contact_id) {
-              const ins = await supabase
-                .from('whatsapp_contacts')
-                .insert({ restaurant_id, phone_number: wa_id, name: contact_name, status: 'active', last_message_at: new Date().toISOString() })
-                .select('id')
-                .single();
-              contact_id = ins.data?.id;
-              logger.info({ 
-                correlationId, 
-                restaurant_id, 
-                action: 'webhook', 
-                step: 'contact_created', 
-                contact_id, 
-                wa_id 
-              }, '[webhook] New WhatsApp contact created');
-            } else {
-              await supabase
-                .from('whatsapp_contacts')
-                .update({ 
-                  name: contact_name, 
-                  last_message_at: new Date().toISOString() 
-                })
-                .eq('id', contact_id);
-              
-              logger.info({
-                correlationId,
-                restaurant_id,
-                action: 'webhook',
-                step: 'contact_updated',
-                contact_id
-              }, '[webhook] Contact updated');
+            if (!phone_number_id) {
+                logger.warn({ correlationId, action: 'webhook.skipped', reason: 'no_phone_number_id', message_id: msg.id }, '[webhook] skipped: message has no phone_number_id in metadata');
+                continue;
             }
 
-            // Sync with chat_* tables
-            try {
-              let chat_contact_id: string | null = null;
-
-              const { data: existingChatContact, error: selectError } = await supabase
-                .from('chat_contacts')
-                .select('id, unread_count')
-                .eq('restaurant_id', restaurant_id)
-                .eq('phone_number', wa_id)
-                .maybeSingle();
-
-              if (selectError) throw selectError;
-
-              if (!existingChatContact) {
-                const { data: newContact, error: insertError } = await supabase
-                  .from('chat_contacts')
-                  .insert({
-                    restaurant_id,
-                    phone_number: wa_id,
-                    name: contact_name,
-                    status: 'active',
-                    customer_type: 'new',
-                    last_message_at: new Date().toISOString(),
-                    unread_count: 1,
-                  })
-                  .select('id')
-                  .single();
-                if (insertError) throw insertError;
-                chat_contact_id = newContact.id;
-                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact.synced.new', contact_id: chat_contact_id }, 'Sync: New chat contact created');
-              } else {
-                chat_contact_id = existingChatContact.id;
-                const { error: updateError } = await supabase
-                  .from('chat_contacts')
-                  .update({
-                    name: contact_name,
-                    last_message_at: new Date().toISOString(),
-                    unread_count: (existingChatContact.unread_count || 0) + 1,
-                    status: 'active'
-                  })
-                  .eq('id', chat_contact_id);
-                if (updateError) throw updateError;
-                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact.synced.update', contact_id: chat_contact_id }, 'Sync: Chat contact updated');
-              }
-
-              if (chat_contact_id) {
-                const { data: existingChatConv, error: convSelectError } = await supabase
-                  .from('chat_conversations')
-                  .select('id')
-                  .eq('restaurant_id', restaurant_id)
-                  .eq('contact_id', chat_contact_id)
-                  .maybeSingle();
-                
-                if (convSelectError) throw convSelectError;
-
-                if (!existingChatConv) {
-                  const { error: insertError } = await supabase.from('chat_conversations').insert({
-                    restaurant_id,
-                    contact_id: chat_contact_id,
-                    status: 'open',
-                  });
-                  if (insertError) throw insertError;
-                  logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_conv.created' }, 'Sync: New chat conversation created');
-                } else {
-                  const { error: updateError } = await supabase.from('chat_conversations').update({
-                    updated_at: new Date().toISOString(),
-                    status: 'open'
-                  }).eq('id', existingChatConv.id);
-                  if (updateError) throw updateError;
-                  logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_conv.updated' }, 'Sync: Chat conversation updated');
-                }
-
-                const type = msg.type as string;
-                const typeContent = msg[type] || {};
-                const contentText = typeContent.body || typeContent.caption || `[${type}]`;
-
-                const { error: messageInsertError } = await supabase.from('chat_messages').insert({
-                  restaurant_id,
-                  sender_id: chat_contact_id,
-                  sender_type: 'customer',
-                  content: contentText,
-                  content_type: type,
-                  is_read: false,
-                });
-                if (messageInsertError) throw messageInsertError;
-                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_msg.created' }, 'Sync: Chat message created');
-              }
-            } catch (syncError: any) {
-              logger.error({ correlationId, restaurant_id, action: 'webhook', step: 'chat_sync.fail', wa_id, error: syncError.message }, 'Failed to sync with chat tables');
-            }
-
-            // Upsert conversation (unique by conversation_id)
-            const conversation_id_str = `wa_${restaurant_id}_${wa_id}`;
-            const existingConv = await supabase
-              .from('whatsapp_conversations')
-              .select('id')
-              .eq('conversation_id', conversation_id_str)
+            const { data: integ, error: integError } = await supabase
+              .from('whatsapp_business_integrations')
+              .select('restaurant_id')
+              .eq('phone_number_id', phone_number_id)
               .maybeSingle();
 
-            let conversation_id = existingConv.data?.id;
-            if (!conversation_id) {
-              const insConv = await supabase
-                .from('whatsapp_conversations')
-                .insert({ 
-                  restaurant_id, 
-                  contact_id, 
-                  conversation_id: conversation_id_str, 
-                  status: 'open', 
-                  last_message_at: new Date().toISOString(),
-                  phone_number_id: phone_number_id
-                })
-                .select('id')
-                .single();
-              conversation_id = insConv.data?.id;
-              logger.info({ 
-                correlationId, 
-                restaurant_id, 
-                action: 'webhook', 
-                step: 'wa_conv.created', 
-                conversation_id: conversation_id_str, 
-                phone_number_id 
-              }, '[webhook] conversation persisted');
-            } else {
-              await supabase
-                .from('whatsapp_conversations')
-                .update({ 
-                  last_message_at: new Date().toISOString(),
-                  phone_number_id: phone_number_id // Make sure phone_number_id is always updated
-                })
-                .eq('id', conversation_id);
-              
-              logger.info({
-                correlationId,
-                restaurant_id,
-                action: 'webhook',
-                step: 'wa_conv.updated',
-                conversation_id
-              }, '[webhook] Conversation updated');
-            }
-
-            // Idempotency: skip if message_id exists
-            const existsMsg = await supabase
-              .from('whatsapp_messages')
-              .select('id')
-              .eq('message_id', msg.id)
-              .maybeSingle();
-            if (existsMsg.data?.id) {
-              logger.info({
-                correlationId,
-                restaurant_id,
-                action: 'webhook',
-                step: 'wa_msg.exists',
-                message_id: msg.id
-              }, '[webhook] Skipping duplicate message');
+            if (integError) {
+              logger.error({ correlationId, action: 'webhook.db_error', error: integError }, 'Error fetching integration from DB');
               continue;
             }
+            
+            if (!integ?.restaurant_id) {
+              logger.warn({ correlationId, action: 'webhook.skipped', reason: 'no_restaurant_found', phone_number_id }, `[webhook] skipped: no restaurant found for phone_number_id ${phone_number_id}`);
+              continue;
+            }
+            const restaurant_id = integ.restaurant_id;
+            const wa_id = msg.from;
 
-            const type = msg.type as string;
-            const content = msg[type] ? msg[type] : { body: undefined };
-            const timestamp = msg.timestamp;
+            logger.info({ correlationId, action: 'webhook.contact.sync.start', wa_id, restaurant_id }, `[contacts] syncing contact for ${wa_id}`);
+            // ... contact sync logic
+            const contact_name = (value.contacts && value.contacts[0]?.profile?.name) || null;
+            const { data: contact, error: upsertError } = await supabase.from('whatsapp_contacts').upsert({
+                restaurant_id, phone_number: wa_id, name: contact_name, last_message_at: new Date().toISOString()
+            }, { onConflict: 'restaurant_id, phone_number' }).select('id').single();
+            if(upsertError) {
+                 logger.error({ correlationId, action: 'webhook.contact.sync.error', error: upsertError }, 'Error syncing contact');
+                 continue;
+            }
+            logger.info({ correlationId, action: 'webhook.contact.sync.success', contact_id: contact.id }, `[contacts] synced contact: ${contact.id}`);
 
-            const messageInsert = await supabase.from('whatsapp_messages').insert({
+            const conversation_id_str = `wa_${restaurant_id}_${wa_id}`;
+            logger.info({ correlationId, action: 'webhook.conversation.persist.start', conversation_id: conversation_id_str }, 'Before inserting into whatsapp_conversations');
+            const { error: convError } = await supabase.from('whatsapp_conversations').upsert({
+                restaurant_id, contact_id: contact.id, conversation_id: conversation_id_str, status: 'open', last_message_at: new Date().toISOString(), phone_number_id
+            }, { onConflict: 'conversation_id' });
+            if (convError) {
+              logger.error({ correlationId, action: 'webhook.conversation.persist.error', error: convError }, 'Error persisting conversation');
+              continue;
+            }
+            logger.info({ correlationId, action: 'webhook.conversation.persisted', conversation_id: conversation_id_str }, `[webhook] conversation persisted: ${conversation_id_str}`);
+
+            logger.info({ correlationId, action: 'webhook.message.persist.start', message_id: msg.id }, 'Before inserting into whatsapp_messages');
+            const { error: msgError } = await supabase.from('whatsapp_messages').insert({
               restaurant_id,
               message_id: msg.id,
-              to_phone: our_phone || metadata.display_phone_number || '',
               from_phone: wa_id,
-              message_type: type,
-              content,
+              to_phone: metadata.display_phone_number,
+              message_type: msg.type,
+              content: msg[msg.type],
               status: 'delivered',
               direction: 'inbound',
               conversation_id: conversation_id_str,
-              phone_number_id,
-              metadata: { timestamp }
-            }).select('id').single();
-            
-            logger.info({ 
-              correlationId, 
-              restaurant_id, 
-              action: 'webhook', 
-              step: 'wa_msg.persisted', 
-              message_id: msg.id, 
-              conversation_id: conversation_id_str,
-              phone_number_id,
-              message_db_id: messageInsert.data?.id
-            }, '[webhook] message persisted');
+              phone_number_id
+            });
+
+            if (msgError) {
+              logger.error({ correlationId, action: 'webhook.message.persist.error', error: msgError, message_id: msg.id }, 'Error persisting message');
+              continue;
+            }
+            logger.info({ correlationId, action: 'webhook.message.persisted', message_id: msg.id }, `[webhook] message persisted: ${msg.id}`);
           }
-        } else if (value.statuses && Array.isArray(value.statuses)) {
-          for (const status of value.statuses) {
-            const message_id = status.id;
-            const new_status = status.status;
-            await supabase.from('whatsapp_messages').update({ status: new_status }).eq('message_id', message_id);
-            await writeConnectionLog({ waba_id, action: 'message_status_update', details: { message_id, status: new_status } });
-            logger.info({ correlationId, action: 'webhook', step: 'msg_status.updated', message_id, new_status }, 'Message status updated');
-          }
-        } else if (field === 'message_template_status_update') {
-          const t = value?.message_templates || [];
-          for (const tmpl of t) {
-            const name = tmpl.name;
-            const status = tmpl.status;
-            await supabase.from('whatsapp_templates').update({ status, rejection_reason: tmpl?.rejection_reason || null }).eq('template_name', name);
-          }
-        } else if (field === 'account_update' || field === 'phone_number_name_update') {
-          await writeConnectionLog({ action: field, waba_id, details: value });
         }
       }
     }
 
     res.status(200).json({ received: true });
   } catch (error: any) {
-    logger.error({ action: 'webhook', step: 'events', status: 'error', error: error?.message }, 'Webhook error');
-    res.status(200).json({ received: true });
+    logger.error({ correlationId, action: 'webhook.error', stack: error.stack }, 'Unhandled error in webhook handler');
+    res.status(200).json({ received: true }); // Always return 200 to Meta
   }
 });
 
@@ -1154,6 +923,8 @@ router.get('/conversations', authenticate, requireRestaurant, async (req: Authen
   const correlationId = getCorrelationId(req as any);
   const restaurant_id = req.user?.restaurant_id;
   const { phone_number_id } = req.query as Record<string, string>;
+  
+  logger.info({ correlationId, restaurant_id, phone_number_id }, '[conversations] query start');
 
   if (!restaurant_id) {
     logger.warn({ correlationId, action: 'whatsapp.conversations', error: 'missing_restaurant_id' }, 'Missing restaurant_id in request');
@@ -1171,7 +942,7 @@ router.get('/conversations', authenticate, requireRestaurant, async (req: Authen
       });
 
       if (error) {
-        logger.warn({ correlationId, restaurant_id, action: 'whatsapp.conversations.rpc_error', error: error.message }, 'Error using RPC function, falling back to manual query');
+        logger.error({ correlationId, action: 'whatsapp.conversations.rpc_error', error: error.message }, 'Error using RPC function, falling back to manual query');
         throw error; // This will be caught by the outer try-catch and trigger the fallback
       }
       
@@ -1257,7 +1028,9 @@ router.get('/conversations', authenticate, requireRestaurant, async (req: Authen
 router.get('/messages', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req as any);
   const restaurant_id = req.user?.restaurant_id;
-  const { conversation_id, contact_id } = req.query as Record<string, string>;
+  const { conversation_id } = req.query as Record<string, string>;
+  
+  logger.info({ correlationId, restaurant_id, conversation_id }, `[messages] query start for conversation ${conversation_id}`);
 
   if (!restaurant_id) {
     logger.warn({ correlationId, action: 'whatsapp.messages', error: 'missing_restaurant_id' }, 'Missing restaurant_id in request');
@@ -1266,49 +1039,31 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
 
   try {
     // We can fetch by either conversation_id or contact_id
-    if (!conversation_id && !contact_id) {
-      logger.warn({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'missing_identifier' }, 'Missing conversation_id or contact_id');
-      return res.status(400).json({ success: false, error: 'É necessário fornecer conversation_id ou contact_id' });
+    if (!conversation_id) {
+      logger.warn({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'missing_identifier' }, 'Missing conversation_id');
+      return res.status(400).json({ success: false, error: 'É necessário fornecer conversation_id' });
     }
 
     let query = supabase
       .from('whatsapp_messages')
       .select('*')
-      .eq('restaurant_id', restaurant_id);
+      .eq('restaurant_id', restaurant_id)
+      .eq('conversation_id', conversation_id)
+      .order('created_at', { ascending: true });
 
-    if (conversation_id) {
-      logger.info({ correlationId, restaurant_id, conversation_id, action: 'whatsapp.messages.fetch_by_conv' }, 'Fetching messages by conversation_id');
-      query = query.eq('conversation_id', conversation_id);
-    } else if (contact_id) {
-      // If contact_id is provided, first get the contact's phone number
-      logger.info({ correlationId, restaurant_id, contact_id, action: 'whatsapp.messages.fetch_by_contact' }, 'Fetching messages by contact_id');
-      const { data: contact, error: contactError } = await supabase
-        .from('whatsapp_contacts')
-        .select('phone_number')
-        .eq('id', contact_id)
-        .eq('restaurant_id', restaurant_id)
-        .single();
-
-      if (contactError || !contact) {
-        logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages', error: 'contact_not_found' }, 'Contact not found');
-        return res.status(404).json({ success: false, error: 'Contato não encontrado' });
-      }
-
-      // Then find the conversation for this contact
-      const conversation_id_str = `wa_${restaurant_id}_${contact.phone_number}`;
-      query = query.eq('conversation_id', conversation_id_str);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: true });
+    const { data, error } = await query;
 
     if (error) {
-      logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages.error', error: error.message }, 'Error fetching messages');
+      logger.error({ correlationId, action: 'whatsapp.messages.error', error: error.message }, 'Error fetching messages');
       return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
     }
 
-    logger.info({ correlationId, restaurant_id, action: 'whatsapp.messages.success', count: data?.length || 0 }, 'Successfully fetched messages');
-    return res.json({ success: true, data });
-    
+    logger.info({ correlationId, count: data?.length || 0 }, `[messages] found ${data?.length || 0} messages`);
+    if(!data || data.length === 0) {
+        logger.info({ correlationId }, '[messages] found 0 messages');
+    }
+
+    res.json({ success: true, data });
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'whatsapp.messages.exception', error: error.message }, 'Exception fetching messages');
     return res.status(500).json({ success: false, error: 'Erro ao listar mensagens' });
