@@ -176,13 +176,39 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       metadata: { waba_id }
     };
 
-    const { error: upsertError } = await supabase
+    // Manual upsert logic to avoid ON CONFLICT issue
+    const { data: existing, error: selectError } = await supabase
       .from('whatsapp_business_integrations')
-      .upsert(integrationData, { onConflict: 'restaurant_id' });
+      .select('id')
+      .eq('restaurant_id', restaurant_id)
+      .maybeSingle();
 
-    if (upsertError) {
-      throw upsertError;
+    if (selectError) {
+      logger.error({ correlationId, restaurant_id, action: 'performWhatsAppSetup.persist.select_error', error: selectError.message }, 'Error checking for existing integration');
+      throw selectError;
     }
+
+    if (existing) {
+      // Update existing record
+      const { error: updateError } = await supabase
+        .from('whatsapp_business_integrations')
+        .update(integrationData)
+        .eq('id', existing.id);
+      if (updateError) {
+        logger.error({ correlationId, restaurant_id, action: 'performWhatsAppSetup.persist.update_error', error: updateError.message }, 'Error updating integration');
+        throw updateError;
+      }
+    } else {
+      // Insert new record
+      const { error: insertError } = await supabase
+        .from('whatsapp_business_integrations')
+        .insert(integrationData);
+      if (insertError) {
+        logger.error({ correlationId, restaurant_id, action: 'performWhatsAppSetup.persist.insert_error', error: insertError.message }, 'Error inserting new integration');
+        throw insertError;
+      }
+    }
+    
     logger.info({ correlationId, action: 'performWhatsAppSetup.persist.success', restaurant_id }, 'Integration row persisted');
     
     return { restaurant_id, waba_id, phone_number_id: resolved_phone_number_id, status: connection_status };
