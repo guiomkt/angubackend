@@ -156,13 +156,14 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
     // Discover Phone Numbers
     const phoneUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
     const phoneResp = await axios.get<GraphPhoneResponse>(phoneUrl, { params: { access_token: graphToken } });
-    const verifiedNumber = phoneResp.data?.data?.find((p: any) => p.verified_name);
+    const allVerifiedNumbers = (phoneResp.data?.data || []).filter((p: any) => p.verified_name);
+    const firstNumber = allVerifiedNumbers.length > 0 ? allVerifiedNumbers[0] : null;
 
-    if (verifiedNumber) {
-      resolved_phone_number_id = verifiedNumber.id;
-      resolved_display_phone_number = verifiedNumber.display_phone_number;
+    if (firstNumber) {
+      resolved_phone_number_id = firstNumber.id;
+      resolved_display_phone_number = firstNumber.display_phone_number;
       connection_status = 'active';
-      logger.info({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'success' }, 'Found existing verified phone number');
+      logger.info({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'success', count: allVerifiedNumbers.length }, `Found ${allVerifiedNumbers.length} verified phone number(s)`);
     } else {
       connection_status = 'unclaimed'; // No verified number, user must claim one manually.
       logger.warn({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'unclaimed' }, 'No verified phone numbers found.');
@@ -182,7 +183,15 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       // The missing fields that caused the not-null constraint violation
       access_token: oauthToken.access_token,
       token_expires_at: oauthToken.expires_at,
-      metadata: { waba_id }
+      metadata: { 
+        waba_id,
+        // Cache all discovered phone numbers for the status endpoint to use
+        phone_numbers_cache: allVerifiedNumbers.map(n => ({
+          phone_number_id: n.id,
+          display_phone_number: n.display_phone_number,
+          status: 'active'
+        }))
+      }
     };
 
     // Manual upsert logic to avoid ON CONFLICT issue
