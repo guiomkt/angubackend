@@ -127,16 +127,58 @@ router.get('/oauth/callback', async (req, res) => {
   const correlationId = getCorrelationId(req as any);
   const { code, state } = req.query as Record<string, string>;
 
-  const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/></head><body>
-<script>
-  try {
-    if (window.opener && typeof window.opener.postMessage === 'function') {
-      window.opener.postMessage({ type: 'META_OAUTH_SUCCESS' }, '*');
+  const closePopupScript = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>WhatsApp OAuth Complete</title>
+  <script>
+    // Log for debugging
+    console.log("OAuth callback page loaded");
+    
+    function sendSuccessMessage() {
+      try {
+        console.log("Attempting to post META_OAUTH_SUCCESS");
+        // Try to notify the opener with more explicit error handling
+        if (window.opener) {
+          console.log("Window opener found, posting message");
+          // Use '*' for targetOrigin during testing - in production use your actual origin
+          window.opener.postMessage({ 
+            type: 'META_OAUTH_SUCCESS', 
+            timestamp: new Date().toISOString(),
+            status: 'success'
+          }, '*');
+          console.log("Message posted successfully");
+        } else {
+          console.error("No window.opener found!");
+          document.getElementById('status').innerHTML = 'Error: No opener window found!';
+        }
+      } catch (e) {
+        console.error("Error posting message:", e);
+        document.getElementById('status').innerHTML = 'Error: ' + e.message;
+      }
+      
+      // Try to close the window regardless of success
+      setTimeout(function() {
+        try { 
+          window.close(); 
+        } catch (e) { 
+          console.error("Could not close window:", e); 
+        }
+      }, 1000);
     }
-  } catch (e) {}
-  try { window.close(); } catch (e) {}
+    
+    // Run the function when DOM is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      sendSuccessMessage();
+    });
+    
+    // Also try immediately (some browsers may work better this way)
+    sendSuccessMessage();
   </script>
-  <p>OAuth concluído. Você pode fechar esta janela.</p>
+  </head>
+  <body>
+  <h3>OAuth Authentication Complete</h3>
+  <p>WhatsApp authentication successful. This window should close automatically.</p>
+  <p id="status">Notifying application...</p>
+  <p>If this window doesn't close, you can close it manually and continue in the main application.</p>
   </body></html>`;
 
   try {
@@ -233,6 +275,20 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
   const token_source = 'bsp_permanent';
   let graphToken = '';
+
+  // VERY CLEAR LOG AT START - should appear immediately when endpoint is called
+  logger.info({
+    action: 'setup.start',
+    correlationId,
+    restaurant_id,
+    source: 'setup_endpoint_entry',
+    timestamp: new Date().toISOString(),
+    body_excerpt: {
+      mode,
+      restaurant_id_in_body: !!bodyRestaurantId,
+      restaurant_id_in_auth: !!req.user?.restaurant_id
+    }
+  }, '🔴 SETUP ENDPOINT CALLED - should see this if frontend calls /api/whatsapp/setup 🔴');
 
   // Log the request payload to ensure we're being called correctly
   logger.info({ 
