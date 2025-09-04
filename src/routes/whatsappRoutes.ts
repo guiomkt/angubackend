@@ -52,7 +52,7 @@ interface GraphPhoneResponse {
 interface PhoneNumberInfo {
   phone_number_id: string;
   display_phone_number: string;
-  status: 'active' | 'pending';
+  status: 'active' | 'pending' | 'Verificado' | 'Não Verificado';
 }
 
 async function writeIntegrationLog(params: {
@@ -157,11 +157,12 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
     const phoneUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
     const phoneResp = await axios.get<GraphPhoneResponse>(phoneUrl, { params: { access_token: graphToken } });
     
-    // Find ALL verified numbers, not just the first one.
-    const allVerifiedNumbers = (phoneResp.data?.data || []).filter((p: any) => p.verified_name);
+    // Fetch ALL numbers, and then determine which are verified.
+    const allNumbers = phoneResp.data?.data || [];
+    const allVerifiedNumbers = allNumbers.filter((p: any) => p.verified_name);
 
     if (allVerifiedNumbers.length > 0) {
-      // Use the first number for the main columns for compatibility
+      // Use the first verified number for the main columns for compatibility
       const primaryNumber = allVerifiedNumbers[0];
       resolved_phone_number_id = primaryNumber.id;
       resolved_display_phone_number = primaryNumber.display_phone_number;
@@ -188,11 +189,11 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       token_expires_at: oauthToken.expires_at,
       metadata: { 
         waba_id,
-        // Cache the full list of numbers found, matching the format used by the /status endpoint
-        phone_numbers_cache: allVerifiedNumbers.map(n => ({
+        // Cache the full list of numbers found, with a user-friendly status
+        phone_numbers_cache: allNumbers.map(n => ({
             phone_number_id: n.id,
             display_phone_number: n.display_phone_number,
-            status: n.quality_rating === 'GREEN' ? 'active' : 'pending'
+            status: n.verified_name ? 'Verificado' : 'Não Verificado'
         }))
       }
     };
@@ -841,6 +842,13 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
           
         logger.info({ correlationId, action: "status.fetch_numbers.success", restaurant_id, numbers_count: numbers.length }, "Successfully fetched phone numbers from Graph API");
 
+        // Map ALL numbers with a user-friendly status
+        numbers = (resp.data?.data || []).map((n) => ({
+          phone_number_id: n.id,
+          display_phone_number: n.display_phone_number,
+          status: n.verified_name ? 'Verificado' : 'Não Verificado',
+        }));
+
         // Asynchronously update cache in DB if new numbers are found
         if (numbers.length > 0) {
           const updatedMetadata = { ...metadata, phone_numbers_cache: numbers };
@@ -995,25 +1003,37 @@ router.get('/contacts', authenticate, requireRestaurant, async (req: Authenticat
   logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
 
   try {
-    // Correctly join through whatsapp_conversations to get whatsapp_contacts
+    // Two-step query to prevent join issues.
+    // 1. Get contact IDs from conversations matching the selected phone number.
     const { data: conversations, error: convError } = await supabase
       .from('whatsapp_conversations')
-      .select(`
-        contact_id,
-        whatsapp_contacts ( * )
-      `)
+      .select('contact_id')
       .eq('restaurant_id', restaurant_id)
-      .eq('phone_number_id', phone_number_id);
+      .eq('phone_number_id', phone_number_id)
+      .not('contact_id', 'is', null);
 
     if (convError) {
       logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: convError.message }, 'Error fetching conversations for contacts');
       return res.status(500).json({ success: false, error: 'Erro ao buscar conversas' });
     }
 
-    // Extract the contact details from the join, ensuring no nulls are returned
-    const contacts = conversations.map(c => c.whatsapp_contacts).filter(Boolean);
+    const contactIds = conversations.map(c => c.contact_id);
+    if (contactIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
 
-    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB via conversations');
+    // 2. Fetch the actual contacts using the retrieved IDs.
+    const { data: contacts, error: contactsError } = await supabase
+      .from('whatsapp_contacts')
+      .select('*')
+      .in('id', contactIds);
+
+    if (contactsError) {
+      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: contactsError.message }, 'Error fetching contacts by ID');
+      return res.status(500).json({ success: false, error: 'Erro ao buscar detalhes dos contatos' });
+    }
+
+    logger.info({ correlationId, restaurant_id, action: 'get_contacts.success', source: 'db', count: contacts.length }, 'Contacts fetched from DB');
     return res.json({ success: true, data: contacts });
 
   } catch (error: any) {
