@@ -93,6 +93,107 @@ async function getRestaurantIdFromUser(req: AuthenticatedRequest): Promise<strin
   return req.user?.restaurant_id || null;
 }
 
+/**
+ * Performs the core WhatsApp Business Account setup logic.
+ * This includes WABA discovery, phone number discovery/claiming, webhook subscription,
+ * and persisting the integration details to the database.
+ * @param restaurant_id The ID of the restaurant to perform setup for.
+ * @param correlationId A tracking ID for logging.
+ * @returns An object with the final status and details of the integration.
+ */
+async function performWhatsAppSetup(restaurant_id: string, correlationId: string) {
+  logger.info({ correlationId, action: 'performWhatsAppSetup.start', restaurant_id }, 'Background setup process started');
+  
+  // This function encapsulates the logic previously in the POST /setup endpoint.
+  // We're keeping the detailed logging from that endpoint.
+  try {
+    const tokenRow = await supabase
+      .from('oauth_tokens')
+      .select('*')
+      .eq('restaurant_id', restaurant_id)
+      .eq('provider', 'meta')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const oauthToken = tokenRow.data;
+    const graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
+    const tokenFingerprint = getTokenFingerprint(graphToken);
+
+    if (!graphToken) {
+      throw new Error('BSP_PERMANENT_TOKEN is missing.');
+    }
+
+    const resolved_business_id: string | null = oauthToken?.business_id || null;
+    const discovery_business_id = BSP_CONFIG.BSP_BUSINESS_ID;
+    if (!discovery_business_id) {
+      throw new Error('BSP_BUSINESS_ID is not configured on the server.');
+    }
+    
+    let waba_id: string | null = null;
+    let resolved_phone_number_id: string | null = null;
+    let resolved_display_phone_number: string | null = null;
+    let connection_status: 'active' | 'pending_verification' | 'unclaimed' = 'unclaimed';
+
+    // Discover WABA
+    const wabaUrl = `${WHATSAPP_API_URL}/${discovery_business_id}/owned_whatsapp_business_accounts`;
+    const wabaResp = await axios.get(wabaUrl, { params: { access_token: graphToken } });
+    waba_id = wabaResp.data?.data?.[0]?.id || null;
+
+    if (!waba_id) {
+      throw new Error('WABA discovery failed.');
+    }
+    await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: true, details: { waba_id } });
+
+    // Discover Phone Numbers
+    const phoneUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+    const phoneResp = await axios.get<GraphPhoneResponse>(phoneUrl, { params: { access_token: graphToken } });
+    const verifiedNumber = phoneResp.data?.data?.find((p: any) => p.verified_name);
+
+    if (verifiedNumber) {
+      resolved_phone_number_id = verifiedNumber.id;
+      resolved_display_phone_number = verifiedNumber.display_phone_number;
+      connection_status = 'active';
+      logger.info({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'success' }, 'Found existing verified phone number');
+    } else {
+      connection_status = 'unclaimed'; // No verified number, user must claim one manually.
+      logger.warn({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'unclaimed' }, 'No verified phone numbers found.');
+    }
+
+    // Subscribe app to WABA messages
+    const subscribeUrl = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
+    await axios.post(subscribeUrl, { subscribed_fields: ['messages'], access_token: graphToken }, { headers: { 'Content-Type': 'application/json' } });
+    
+    // Persist integration details
+    const integrationData = {
+      restaurant_id,
+      business_account_id: resolved_business_id || waba_id,
+      phone_number_id: resolved_phone_number_id,
+      phone_number: resolved_display_phone_number,
+      connection_status,
+      metadata: { waba_id }
+    };
+
+    const { error: upsertError } = await supabase
+      .from('whatsapp_business_integrations')
+      .upsert(integrationData, { onConflict: 'restaurant_id' });
+
+    if (upsertError) {
+      throw upsertError;
+    }
+    logger.info({ correlationId, action: 'performWhatsAppSetup.persist.success', restaurant_id }, 'Integration row persisted');
+    
+    return { restaurant_id, waba_id, phone_number_id: resolved_phone_number_id, status: connection_status };
+
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error';
+    logger.error({ correlationId, restaurant_id, action: 'performWhatsAppSetup.error', error: errMsg }, 'Background setup process failed');
+    await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: errMsg });
+    throw error;
+  }
+}
+
 // 1. OAuth - Login
 router.get('/oauth/login', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
@@ -130,21 +231,18 @@ router.get('/oauth/callback', async (req, res) => {
   const { code, state } = req.query as Record<string, string>;
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
-  const frontendUrl = process.env.FRONTEND_URL || 'https://www.angu.ai';
-  // Add a status parameter to the URL for the main window to detect success
-  const successRedirectUrl = `${frontendUrl}/whatsapp-oauth-success?status=success`;
-  const failureRedirectUrl = `${frontendUrl}/whatsapp-oauth-success?status=failure`;
+  const closePopupScript = `<!DOCTYPE html><html><head><script>window.close();</script></head><body><p>Conectado. Pode fechar esta janela.</p></body></html>`;
   
   try {
     if (!code || !state) {
       logger.error({ correlationId, action: 'oauth_callback.error', reason: 'missing_params' }, 'Missing code or state parameters');
-      return res.redirect(failureRedirectUrl);
+      return res.status(400).send('Parâmetros inválidos.');
     }
 
     const parsed = verifyState(state);
     if (!parsed?.restaurant_id || !parsed.nonce) {
       logger.error({ correlationId, action: 'oauth_callback.error', reason: 'invalid_state' }, 'Invalid state parameter');
-      return res.redirect(failureRedirectUrl);
+      return res.status(400).send('State inválido.');
     }
 
     const { restaurant_id, nonce } = parsed as { restaurant_id: string, nonce: string };
@@ -161,7 +259,7 @@ router.get('/oauth/callback', async (req, res) => {
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
       logger.info({ correlationId, action: 'oauth_callback.redirecting', status: 'duplicate' }, 'Redirecting for duplicate nonce');
-      return res.redirect(successRedirectUrl);
+      return res.send(closePopupScript);
     }
 
     const url = `${META_URLS.OAUTH_ACCESS_TOKEN}?client_id=${encodeURIComponent(FACEBOOK_APP_ID)}&client_secret=${encodeURIComponent(FACEBOOK_APP_SECRET)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code=${encodeURIComponent(code)}`;
@@ -212,21 +310,30 @@ router.get('/oauth/callback', async (req, res) => {
 
     if (tokenInsertError) {
       logger.error({ correlationId, action: 'oauth_callback.token_persist.error', restaurant_id, error: tokenInsertError.message }, 'Failed to persist OAuth token');
+      // Still close the popup, but log the error.
     } else {
       logger.info({ correlationId, action: 'oauth_callback.token_persist.success', restaurant_id, token_id: tokenData[0]?.id }, 'OAuth token persisted successfully');
+      
+      // Fire-and-forget the setup process. Don't block the response.
+      performWhatsAppSetup(restaurant_id, correlationId).catch(error => {
+          logger.error({
+              correlationId,
+              restaurant_id,
+              action: 'oauth_callback.background_setup_failed',
+              error: error?.message
+          }, 'The background setup process initiated by OAuth callback failed.');
+      });
     }
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
-    // Redirect to the frontend, which will handle the window closing.
-    logger.info({ correlationId, action: 'oauth_callback.redirecting', restaurant_id, url: successRedirectUrl }, 'Redirecting to frontend callback page');
-    res.redirect(successRedirectUrl);
+    res.send(closePopupScript);
 
   } catch (error: any) {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback.error', step: 'exception', error: error?.message }, 'OAuth callback error');
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: false, error_message: error?.message });
-    res.redirect(failureRedirectUrl);
+    res.status(500).send('Ocorreu um erro no servidor.');
   }
 });
 
@@ -234,403 +341,22 @@ router.get('/oauth/success', (req, res) => {
   res.send('<html><body><p>Login com Meta concluído. Você pode fechar esta janela.</p></body></html>');
 });
 
-// 2. Setup
+// 2. Setup (Now a lightweight wrapper)
 router.post('/setup', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
-  logger.info({ correlationId, action: 'setup.start', restaurant_id: req.user?.restaurant_id }, 'Setup started');
-  const { restaurant_id: bodyRestaurantId, mode, client_business_id, phone_number_id, display_phone_number, cc, phone_number } = req.body || {};
-  const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
-  const token_source = 'bsp_permanent';
-  let graphToken = '';
-
-  // VERY CLEAR LOG AT START - should appear immediately when endpoint is called
-  logger.info({
-    action: 'setup.start',
-    correlationId,
-    restaurant_id,
-    source: 'setup_endpoint_entry',
-    timestamp: new Date().toISOString(),
-    body_excerpt: {
-      mode,
-      restaurant_id_in_body: !!bodyRestaurantId,
-      restaurant_id_in_auth: !!req.user?.restaurant_id
-    }
-  }, '🔴 SETUP ENDPOINT CALLED - should see this if frontend calls /api/whatsapp/setup 🔴');
-
-  // Log the request payload to ensure we're being called correctly
-  logger.info({ 
-    action: 'setup.request', 
-    correlationId, 
-    restaurant_id, 
-    payload: { 
-      mode, 
-      client_business_id, 
-      phone_number_id: phone_number_id ? `${phone_number_id.substring(0, 5)}...` : null,
-      display_phone_number: display_phone_number ? maskPhoneNumber(display_phone_number) : null,
-      cc, 
-      phone_number: phone_number ? maskPhoneNumber(phone_number) : null
-    }
-  }, 'Setup request received');
+  const restaurant_id = req.user?.restaurant_id;
 
   if (!restaurant_id) {
-    logger.error({ action: 'setup.error', correlationId, error: 'missing_restaurant_id' }, 'Missing restaurant_id in setup request');
-    res.status(400).json({ success: false, error: 'restaurant_id é obrigatório' });
-    return;
+    return res.status(400).json({ success: false, error: 'restaurant_id é obrigatório' });
   }
 
   try {
-    const tokenRow = await supabase
-      .from('oauth_tokens')
-      .select('*')
-      .eq('restaurant_id', restaurant_id)
-      .eq('provider', 'meta')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const oauthToken = tokenRow.data;
-    graphToken = BSP_CONFIG.PERMANENT_TOKEN || '';
-    const tokenFingerprint = getTokenFingerprint(graphToken);
-
-    if (!graphToken) {
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_PERMANENT_TOKEN is missing.' });
-      res.status(400).json({ status: "error", action: "invalid_bsp_token", message: 'BSP permanent token is not configured.' });
-      return;
-    }
-
-    // [VALIDATION] Ensure BSP_BUSINESS_ID is not misconfigured as the App ID.
-    if (BSP_CONFIG.BSP_BUSINESS_ID === FACEBOOK_APP_ID) {
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_BUSINESS_ID is misconfigured as FACEBOOK_APP_ID.' });
-      res.status(400).json({ status: "error", message: "BSP_BUSINESS_ID misconfigured" });
-      return;
-    }
-
-    const resolved_business_id: string | null = client_business_id || oauthToken?.business_id || null;
-    // The business_id from OAuth is for identifying the client, but for WABA discovery, we must use our BSP Business ID.
-    const discovery_business_id = BSP_CONFIG.BSP_BUSINESS_ID;
-    let waba_id: string | null = null;
-    let resolved_phone_number_id: string | null = phone_number_id || null;
-    let resolved_display_phone_number: string | null = display_phone_number || null;
-    let connection_status: 'active' | 'pending_verification' = 'active';
-
-    // Discover WABA via our BSP Business ID
-    if (!discovery_business_id) {
-        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_BUSINESS_ID is not configured.' });
-        res.status(500).json({ status: "error", action: "invalid_bsp_token", message: 'BSP Business ID is not configured on the server.' });
-        return;
-    }
-
-    const url = `${WHATSAPP_API_URL}/${discovery_business_id}/owned_whatsapp_business_accounts`;
-    const t0 = Date.now();
-    try {
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint, discovery_business_id }, 'Attempting WABA discovery');
-      const resp = await axios.get(url, { params: { access_token: graphToken } });
-      const latency_ms = Date.now() - t0;
-      const j: any = resp.data;
-      const list = j?.data || [];
-      if (list.length > 0) waba_id = list[0].id;
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'WABA discovered');
-      await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: true, details: { graph_endpoint: url, http_status: 200, waba_id } });
-    } catch (e: any) {
-      const http_status = e?.response?.status || 500;
-      const error_message = e?.response?.data?.error?.message || e.message;
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'waba_discovery', status: 'error', error: error_message, http_status }, 'WABA discovery failed');
-      await writeIntegrationLog({ restaurant_id, step: 'waba_discovery', success: false, error_message, details: { graph_endpoint: url, http_status, discovery_business_id } });
-      throw e;
-    }
-
-    // Step 2: Find or Claim Phone Number
-    if (waba_id) {
-      const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint }, 'Attempting phone number discovery');
-      const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: graphToken } });
-      const phoneList = resp.data?.data || [];
-      const verifiedNumber = phoneList.find((p: any) => p.verified_name);
-
-      if (verifiedNumber) {
-        resolved_phone_number_id = verifiedNumber.id;
-        resolved_display_phone_number = verifiedNumber.display_phone_number;
-        connection_status = 'active';
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'success' }, 'Found existing verified phone number');
-      } else if (cc && phone_number) {
-        // No verified number found, try to claim one
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_claim', status: 'pending', waba_id }, 'No verified number found, attempting to claim a new one.');
-        const claimUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-        await axios.post(claimUrl, { cc, phone_number, method: 'sms' }, { params: { access_token: graphToken }, headers: { 'Content-Type': 'application/json' } });
-        
-        await writeIntegrationLog({ restaurant_id, step: 'phone_registration', success: true, details: { graph_endpoint: claimUrl, phone_number: maskPhoneNumber(`${cc}${phone_number}`) } });
-        
-        // Re-fetch numbers to get the ID of the new one
-        const refetchResp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: graphToken } });
-        const newList = refetchResp.data?.data || [];
-        const newNumber = newList.find((p: any) => !p.verified_name && p.display_phone_number.endsWith(phone_number));
-        
-        if (newNumber) {
-            resolved_phone_number_id = newNumber.id;
-            resolved_display_phone_number = newNumber.display_phone_number;
-        }
-
-        connection_status = 'pending_verification';
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'phone_claim', status: 'success', waba_id, phone_number_id: resolved_phone_number_id }, 'Phone number claimed, verification pending.');
-      } else {
-        logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'phone_discovery', status: 'unclaimed' }, 'No phone numbers found and no new number provided to claim.');
-        res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required', waba_id } });
-        return;
-      }
-    }
-
-    // Subscribe app to WABA messages
-    if (waba_id) {
-      const url = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
-      const t2 = Date.now();
-      try {
-        const request_body = { subscribed_fields: ['messages'] };
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'pending', graph_endpoint: url, token_source, token_fingerprint: tokenFingerprint, request_body }, 'Attempting to subscribe app');
-        const resp = await axios.post(url, { ...request_body, access_token: graphToken }, { headers: { 'Content-Type': 'application/json' } });
-        const latency_ms = Date.now() - t2;
-        const json: any = resp.data ?? {};
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'success', http_status: 200, graph_endpoint: url, latency_ms }, 'Subscribe app result');
-        await writeIntegrationLog({ restaurant_id, step: 'subscribe', success: true, details: { graph_endpoint: url, http_status: 200 } });
-      } catch (e: any) {
-        const http_status = e?.response?.status || 500;
-        const error_message = e?.response?.data?.error?.message || e.message;
-        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'subscribe', status: 'error', error: error_message, http_status }, 'Subscription failed');
-        await writeIntegrationLog({ restaurant_id, step: 'subscribe', success: false, error_message, details: { graph_endpoint: url, http_status } });
-        throw e;
-      }
-    }
-
-    // Step 3: Configure Webhook for the App
-    const webhook_url = `${API_BASE_URL}/api/whatsapp/webhook`;
-    try {
-      const appId = FACEBOOK_APP_ID;
-      const appSecret = FACEBOOK_APP_SECRET;
-      const appAccessToken = `${appId}|${appSecret}`;
-      const url = `${WHATSAPP_API_URL}/${appId}/subscriptions`;
-      const subscribed_fields = ["messages", "message_template_status_update", "account_update"];
-      
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'pending', graph_endpoint: url, appId }, 'Configuring app webhook with App Access Token');
-      
-      await axios.post(url, {
-        object: 'whatsapp_business_account',
-        callback_url: webhook_url,
-        verify_token: WEBHOOK_VERIFY_TOKEN,
-        fields: subscribed_fields.join(','),
-        include_values: true,
-        access_token: appAccessToken
-      }, { headers: { 'Content-Type': 'application/json' } });
-
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'success' }, 'Webhook configured successfully');
-      await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: true, details: { webhook_url, subscribed_fields } });
-    } catch (e: any) {
-      const http_status = e?.response?.status || 500;
-      const error_message = e?.response?.data?.error?.message || e.message;
-      // It's possible the webhook is already configured, so we can treat some errors as non-fatal.
-      if (error_message.includes("already subscribed")) {
-        logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'already_configured' }, 'Webhook was already configured.');
-        await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: true, details: { note: 'already_configured' } });
-      } else {
-        logger.error({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'error', error: error_message, http_status }, 'Webhook configuration failed');
-        await writeIntegrationLog({ restaurant_id, step: 'webhook_config', success: false, error_message, details: { http_status } });
-        throw e;
-      }
-    }
-
-
-    // Persist webhook record idempotently
-    try {
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'pending' }, 'Persisting webhook configuration');
-      const existingWebhook = await supabase
-        .from('whatsapp_webhooks')
-        .select('id')
-        .eq('restaurant_id', restaurant_id)
-        .maybeSingle();
-      if (existingWebhook.data?.id) {
-        await supabase.from('whatsapp_webhooks').update({ webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true, last_triggered: null }).eq('id', existingWebhook.data.id);
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'updated', webhook_id: existingWebhook.data.id }, 'Webhook record updated');
-      } else {
-        const insertResult = await supabase.from('whatsapp_webhooks').insert({ restaurant_id, webhook_url, verify_token: WEBHOOK_VERIFY_TOKEN, is_active: true }).select('id');
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'created', webhook_id: insertResult.data?.[0]?.id }, 'Webhook record created');
-      }
-    } catch (e: any) {
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'webhook_persist', status: 'error', error: e.message }, 'Failed to persist webhook record');
-    }
-
-    // Ensure connection status is active when we have a phone number resolved and webhook configured
-    if (resolved_phone_number_id) {
-      connection_status = 'active';
-    }
-
-    // Upsert whatsapp_business_integrations by restaurant_id
-    logger.info({ correlationId, restaurant_id, action: 'setup', step: 'integration_persist', status: 'pending' }, 'Beginning integration persistence');
-    try {
-      const current = await supabase
-        .from('whatsapp_business_integrations')
-        .select('*')
-        .eq('restaurant_id', restaurant_id)
-        .maybeSingle();
-
-      const insertOrUpdate = {
-        restaurant_id,
-        business_account_id: resolved_business_id || waba_id || 'unknown',
-        phone_number_id: resolved_phone_number_id,
-        phone_number: resolved_display_phone_number,
-        webhook_url,
-        webhook_verify_token: WEBHOOK_VERIFY_TOKEN,
-        connection_status,
-        metadata: { mode, waba_id }
-      } as any;
-
-      logger.info({ 
-        correlationId, 
-        action: 'setup.persist.attempt', 
-        restaurant_id, 
-        payload: {
-          restaurant_id,
-          business_account_id: insertOrUpdate.business_account_id,
-          phone_number_id: insertOrUpdate.phone_number_id ? `${insertOrUpdate.phone_number_id.substring(0, 5)}...` : null,
-          phone_number: insertOrUpdate.phone_number ? maskPhoneNumber(insertOrUpdate.phone_number) : null,
-          connection_status: insertOrUpdate.connection_status
-        }
-      }, 'Attempting to persist whatsapp_business_integrations');
-
-      let persistResult;
-      if (current.data) {
-        const { data, error: upErr } = await supabase
-          .from('whatsapp_business_integrations')
-          .update(insertOrUpdate)
-          .eq('id', current.data.id)
-          .select('id');
-        if (upErr) {
-          logger.error({ 
-            correlationId,
-            action: 'setup.persist.error', 
-            restaurant_id, 
-            error: upErr.message, 
-            details: upErr
-          }, 'Failed to update integration row');
-          throw upErr;
-        }
-        persistResult = data?.[0]?.id || current.data.id;
-        logger.info({ correlationId, action: 'setup.persist.updated', restaurant_id, integration_id: persistResult }, 'Integration row updated successfully');
-      } else {
-        const { data, error: insErr } = await supabase
-          .from('whatsapp_business_integrations')
-          .insert(insertOrUpdate)
-          .select('id');
-        if (insErr) {
-          logger.error({ 
-            correlationId,
-            action: 'setup.persist.error', 
-            restaurant_id, 
-            error: insErr.message,
-            details: insErr
-          }, 'Failed to insert integration row');
-          throw insErr;
-        }
-        persistResult = data?.[0]?.id;
-        logger.info({ correlationId, action: 'setup.persist.inserted', restaurant_id, integration_id: persistResult }, 'Integration row inserted successfully');
-      }
-      logger.info({ correlationId, action: 'setup.persist.success', restaurant_id, integration_id: persistResult }, 'Integration row persisted');
-    } catch (persistError: any) {
-      // Surface persistence failures
-      logger.error({ 
-        correlationId,
-        action: 'setup.persist.failed', 
-        restaurant_id, 
-        error: persistError.message,
-        details: {
-          code: persistError.code,
-          hint: persistError.hint,
-          details: persistError.details
-        }
-      }, 'Failed to persist WhatsApp integration');
-      throw persistError;
-    }
-
-    // Update signup state
-    try {
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'pending' }, 'Updating signup state');
-      
-      const signupState = await supabase
-        .from('whatsapp_signup_states')
-        .select('id')
-        .eq('restaurant_id', restaurant_id)
-        .maybeSingle();
-
-      const signupPayload: any = {
-        restaurant_id,
-        status: connection_status === 'active' ? 'completed' : 'pending_verification',
-        waba_id: waba_id,
-        phone_number_id: resolved_phone_number_id,
-        phone_number: resolved_display_phone_number,
-        business_id: resolved_business_id
-      };
-
-      if (signupState.data?.id) {
-        await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'updated' }, 'Signup state updated');
-      } else {
-        const insertResult = await supabase.from('whatsapp_signup_states').insert(signupPayload).select('id');
-        logger.info({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'created', signup_state_id: insertResult.data?.[0]?.id }, 'Signup state created');
-      }
-    } catch (e: any) {
-      logger.warn({ correlationId, restaurant_id, action: 'setup', step: 'signup_state_update', status: 'error', error: e.message }, 'Failed to update signup state (non-fatal)');
-    }
-
-    // Read back persisted integration row for structured logging
-    const { data: persistedInteg } = await supabase
-      .from('whatsapp_business_integrations')
-      .select('*')
-      .eq('restaurant_id', restaurant_id)
-      .maybeSingle();
-
-    logger.info({ 
-      correlationId,
-      action: "setup.persist", 
-      restaurant_id, 
-      integration: {
-        restaurant_id,
-        waba_id,
-        phone_number_id: resolved_phone_number_id ? `${resolved_phone_number_id.substring(0, 5)}...` : null,
-        display_phone_number: resolved_display_phone_number ? maskPhoneNumber(resolved_display_phone_number) : null,
-        connection_status
-      }, 
-      db_row_exists: !!persistedInteg 
-    }, "Integration state persisted successfully.");
-
-    res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
+    logger.info({ correlationId, restaurant_id, action: 'setup.manual_trigger' }, 'Manual setup triggered');
+    const setupResult = await performWhatsAppSetup(restaurant_id, correlationId);
+    return res.json({ success: true, data: setupResult });
   } catch (error: any) {
-    const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error'
-    const status = error?.response?.status || 500
-    const graphError = error?.response?.data?.error || null;
-
-    // If unclaimed hint appears here, respond with claim_required
-    if (/not\s*claimed|not\s*found/i.test(String(errMsg))) {
-      res.status(200).json({ success: true, data: { status: 'unclaimed', action: 'claim_required' } });
-      return;
-    }
-    // Handle invalid OAuth token error specifically
-    if (graphError && graphError.code === 190) { // Graph API error code for invalid token
-      const errorDetails = {
-        token_source,
-        token_fingerprint: getTokenFingerprint(graphToken),
-        original_error: {
-          message: graphError.message,
-          code: graphError.code,
-          type: graphError.type,
-          fbtrace_id: graphError.fbtrace_id
-        }
-      };
-      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: 'Invalid OAuth access token', details: errorDetails }, 'Setup error: Invalid OAuth access token');
-      await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: 'Invalid OAuth access token', details: { ...errorDetails, http_status: status } });
-      res.status(401).json({ status: "error", action: "retry_with_bsp", message: "Invalid OAuth access token", error_details: errorDetails.original_error });
-      return;
-    }
-    logger.error({ correlationId, restaurant_id, action: 'setup', step: 'complete_flow', status: 'error', error: errMsg, http_status: status, details: { ...error?.response?.data, graphError } }, 'Setup error');
-    await writeIntegrationLog({ restaurant_id, step: 'complete_flow', success: false, error_message: errMsg, details: { http_status: status } });
-    res.status(500).json({ success: false, error: errMsg });
+    const errMsg = error?.response?.data?.error?.message || error?.message || 'Unknown setup error';
+    return res.status(500).json({ success: false, error: errMsg });
   }
 });
 
