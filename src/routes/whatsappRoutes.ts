@@ -1039,48 +1039,20 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
 // Status endpoint
 router.get('/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req as any);
-  logger.info({ correlationId, action: 'status.start', restaurant_id: req.user?.restaurant_id }, 'Status check started');
-  const authHeader = req.headers['authorization'] || '';
-  const tokenFingerprint = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-    ? `${authHeader.slice(7, 12)}...`
-    : 'none';
   const restaurant_id = req.user?.restaurant_id;
+  logger.info({ correlationId, action: 'status.start', restaurant_id }, 'Status check started');
 
   if (!restaurant_id) {
-    logger.warn({ correlationId, action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id: null }, 'Unauthorized status request - missing restaurant_id');
+    logger.warn({ correlationId, action: 'status.read', restaurant_id: null }, 'Unauthorized status request - missing restaurant_id');
     return res.status(401).json({ success: false, error: 'Unauthorized: missing restaurant context' });
   }
 
-  logger.info({ correlationId, action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id }, 'Status request auth context');
-
   try {
-    // First check if the restaurant exists
-    const { data: restaurant, error: restaurantError } = await supabase
-      .from('restaurants')
-      .select('id')
-      .eq('id', restaurant_id)
-      .maybeSingle();
-    
-    if (restaurantError || !restaurant) {
-      logger.warn({ correlationId, action: "status.read", restaurant_id, error: restaurantError?.message || "not_found", reason: 'invalid_restaurant_id' }, "Restaurant ID not found in database");
-      return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
-    }
-
-    // Now get the integration
     const { data, error } = await supabase
       .from('whatsapp_business_integrations')
       .select('*')
       .eq('restaurant_id', restaurant_id)
       .maybeSingle();
-
-    logger.info({ 
-      correlationId, 
-      action: "status.query", 
-      restaurant_id, 
-      query_error: error?.message, 
-      row_exists: !!data,
-      row_id: data?.id
-    }, "WhatsApp integration query executed");
 
     if (error) {
       logger.error({ correlationId, action: "status.read", restaurant_id, error: error.message, reason: 'db_query_error' }, "Error querying WhatsApp integration");
@@ -1094,52 +1066,57 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     
     logger.info({ correlationId, action: 'status.integration_found', restaurant_id, status: data.connection_status }, 'Integration found');
     
-    const waba_id = (data.metadata as any)?.waba_id || null;
+    const metadata = (data.metadata || {}) as any;
+    const waba_id = metadata.waba_id || null;
+    const cached_numbers = metadata.phone_numbers_cache || [];
     let returned_status = data.connection_status || 'not_connected';
     let numbers: PhoneNumberInfo[] = [];
     
-    logger.info({ 
-      correlationId, 
-      action: "status.fetch_numbers", 
-      restaurant_id, 
-      waba_id, 
-      graph_endpoint: `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`
-    }, "Fetching phone numbers from Graph API");
-    
-    if (returned_status === 'active') {
-      if (waba_id) {
-        try {
-          // Fetch all associated numbers from Graph API
-          const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-          logger.info({ correlationId, action: "status.fetch_numbers", restaurant_id, waba_id, graph_endpoint: url }, "Fetching phone numbers from Graph API");
-          
-          const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
-          numbers = (resp.data?.data || []).map((n) => ({
-            phone_number_id: n.id,
-            display_phone_number: n.display_phone_number,
-            status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
-          }));
-          
-          logger.info({ 
-            correlationId, 
-            action: "status.fetch_numbers.success", 
-            restaurant_id, 
-            numbers_count: numbers.length 
-          }, "Successfully fetched phone numbers from Graph API");
-        } catch (error: any) {
-          logger.error({ 
-            correlationId,
-            restaurant_id, 
-            action: "status.fetch_numbers.error", 
-            error: error.message,
-            status_code: error.response?.status,
-            error_details: error.response?.data?.error
-          }, "Error fetching phone numbers from Graph API");
+    if (returned_status === 'active' && waba_id) {
+      try {
+        const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+        logger.info({ correlationId, action: "status.fetch_numbers", restaurant_id, waba_id, graph_endpoint: url }, "Fetching phone numbers from Graph API");
+        
+        const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
+        numbers = (resp.data?.data || []).map((n) => ({
+          phone_number_id: n.id,
+          display_phone_number: n.display_phone_number,
+          status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
+        }));
+        
+        logger.info({ correlationId, action: "status.fetch_numbers.success", restaurant_id, numbers_count: numbers.length }, "Successfully fetched phone numbers from Graph API");
+
+        // Asynchronously update cache in DB if new numbers are found
+        if (numbers.length > 0) {
+          const updatedMetadata = { ...metadata, phone_numbers_cache: numbers };
+          supabase.from('whatsapp_business_integrations')
+            .update({ metadata: updatedMetadata })
+            .eq('id', data.id)
+            .then(({ error: cacheError }) => {
+              if (cacheError) {
+                logger.warn({ correlationId, restaurant_id, action: "status.cache_numbers.error", error: cacheError.message }, "Failed to cache phone numbers in metadata");
+              } else {
+                logger.info({ correlationId, restaurant_id, action: "status.cache_numbers.success" }, "Phone numbers cached successfully");
+              }
+            });
+        }
+      } catch (fetchError: any) {
+        logger.error({ correlationId, restaurant_id, action: "status.fetch_numbers.error", error: fetchError.message }, "Error fetching phone numbers from Graph API, will use cache if available.");
+        // On error, use cached numbers
+        if (cached_numbers.length > 0) {
+          numbers = cached_numbers;
+          logger.info({ correlationId, action: "status.using_cached_numbers", restaurant_id, count: numbers.length }, "Using cached numbers due to Graph API error");
         }
       }
-      // Always include DB number as a fallback if none gathered from Graph
-      if ((!numbers || numbers.length === 0) && data.phone_number_id && data.phone_number) {
-        logger.info({ correlationId, action: "status.using_db_number", restaurant_id }, "No numbers from Graph API, using DB stored number");
+    }
+
+    // Fallback logic if numbers array is still empty
+    if (numbers.length === 0) {
+      if (cached_numbers.length > 0) {
+        numbers = cached_numbers;
+        logger.info({ correlationId, action: "status.fallback_cache", restaurant_id }, "No numbers from Graph API, using cached numbers");
+      } else if (data.phone_number_id && data.phone_number) {
+        logger.info({ correlationId, action: "status.fallback_db", restaurant_id }, "No numbers from Graph or cache, using single DB stored number");
         numbers = [{
           phone_number_id: data.phone_number_id,
           display_phone_number: data.phone_number,
@@ -1160,21 +1137,10 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
       }
     });
   } catch (error: any) {
-    logger.error({ 
-      correlationId, 
-      action: "status.read.error", 
-      restaurant_id, 
-      error: error.message,
-      stack: error.stack
-    }, "Unexpected error in status endpoint");
-    
+    logger.error({ correlationId, action: "status.read.error", restaurant_id, error: error.message }, "Unexpected error in status endpoint");
     return res.json({
       success: true,
-      data: {
-        status: 'not_connected',
-        numbers: [],
-        error: 'unexpected_error'
-      }
+      data: { status: 'not_connected', numbers: [], error: 'unexpected_error' }
     });
   }
 });
