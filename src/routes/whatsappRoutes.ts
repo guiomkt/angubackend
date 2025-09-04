@@ -45,7 +45,14 @@ interface GraphPhoneResponse {
     id: string;
     display_phone_number: string;
     verified_name?: string;
+    quality_rating?: string;
   }>;
+}
+
+interface PhoneNumberInfo {
+  phone_number_id: string;
+  display_phone_number: string;
+  status: 'active' | 'pending';
 }
 
 async function writeIntegrationLog(params: {
@@ -445,7 +452,14 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       await supabase.from('whatsapp_signup_states').update(signupPayload).eq('id', signupState.data.id);
     }
 
-    logger.info({ action: "setup", step: "persist", restaurant_id, connection_status, waba_id, phone_number_id: resolved_phone_number_id }, "Integration state persisted successfully.");
+    // Read back persisted integration row for structured logging
+    const { data: persistedInteg } = await supabase
+      .from('whatsapp_business_integrations')
+      .select('*')
+      .eq('restaurant_id', restaurant_id)
+      .maybeSingle();
+
+    logger.info({ action: "setup.persist", restaurant_id, connection_status, db_row: persistedInteg, payload: { waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number } }, "Integration state persisted successfully.");
 
     res.json({ success: true, data: { restaurant_id, business_id: resolved_business_id, waba_id, phone_number_id: resolved_phone_number_id, display_phone_number: resolved_display_phone_number, status: connection_status } });
   } catch (error: any) {
@@ -655,6 +669,7 @@ router.post('/webhook', async (req, res) => {
                 .select('id')
                 .single();
               contact_id = ins.data?.id;
+              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'contact_created', contact_id, wa_id }, 'New WhatsApp contact created');
             } else {
               await supabase.from('whatsapp_contacts').update({ name: contact_name, last_message_at: new Date().toISOString() }).eq('id', contact_id);
             }
@@ -671,10 +686,18 @@ router.post('/webhook', async (req, res) => {
             if (!conversation_id) {
               const insConv = await supabase
                 .from('whatsapp_conversations')
-                .insert({ restaurant_id, contact_id, conversation_id: conversation_id_str, status: 'open', last_message_at: new Date().toISOString() })
+                .insert({ 
+                  restaurant_id, 
+                  contact_id, 
+                  conversation_id: conversation_id_str, 
+                  status: 'open', 
+                  last_message_at: new Date().toISOString(), 
+                  phone_number_id: metadata.phone_number_id
+                })
                 .select('id')
                 .single();
               conversation_id = insConv.data?.id;
+              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'conversation_created', conversation_id: conversation_id_str, phone_number_id }, 'New WhatsApp conversation created');
             } else {
               await supabase.from('whatsapp_conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation_id);
             }
@@ -690,7 +713,7 @@ router.post('/webhook', async (req, res) => {
             const type = msg.type as string;
             const content = msg[type] ? msg[type] : { body: undefined };
 
-            await supabase.from('whatsapp_messages').insert({
+            const messageInsert = await supabase.from('whatsapp_messages').insert({
               restaurant_id,
               message_id: msg.id,
               to_phone: our_phone || metadata.display_phone_number || '',
@@ -700,8 +723,20 @@ router.post('/webhook', async (req, res) => {
               status: 'delivered',
               direction: 'inbound',
               conversation_id: conversation_id_str,
+              phone_number_id,
               metadata: { timestamp: msg.timestamp }
-            });
+            }).select('id').single();
+            
+            logger.info({ 
+              correlationId, 
+              restaurant_id, 
+              action: 'webhook', 
+              step: 'message_persisted', 
+              message_id: msg.id, 
+              conversation_id: conversation_id_str,
+              phone_number_id,
+              message_db_id: messageInsert.data?.id
+            }, 'WhatsApp message persisted');
           }
         } else if (value.statuses && Array.isArray(value.statuses)) {
           for (const status of value.statuses) {
@@ -709,6 +744,7 @@ router.post('/webhook', async (req, res) => {
             const new_status = status.status;
             await supabase.from('whatsapp_messages').update({ status: new_status }).eq('message_id', message_id);
             await writeConnectionLog({ waba_id, action: 'message_status_update', details: { message_id, status: new_status } });
+            logger.info({ correlationId, action: 'webhook', step: 'message_status_updated', message_id, new_status }, 'Message status updated');
           }
         } else if (field === 'message_template_status_update') {
           const t = value?.message_templates || [];
@@ -733,9 +769,9 @@ router.post('/webhook', async (req, res) => {
 // 5. Send Message
 router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
-  const { restaurant_id: bodyRestaurantId, to, type = 'text', message } = req.body || {};
+  const { restaurant_id: bodyRestaurantId, to, type = 'text', message, from_phone_number_id } = req.body || {};
   const restaurant_id = bodyRestaurantId || req.user?.restaurant_id;
-  if (!restaurant_id || !to || !message) {
+  if (!restaurant_id || !to || !message || !from_phone_number_id) {
     res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
     return;
   }
@@ -746,11 +782,10 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
       .select('*')
       .eq('restaurant_id', restaurant_id)
       .maybeSingle();
-
-    const phone_number_id = integ.data?.phone_number_id;
+    
     const from_phone = integ.data?.phone_number || '';
 
-    if (!phone_number_id) {
+    if (!from_phone_number_id) {
       res.status(400).json({ success: false, error: 'Integração WhatsApp não configurada' });
       return;
     }
@@ -766,7 +801,7 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
       payload[type] = message;
     }
 
-    const url = `${WHATSAPP_API_URL}/${phone_number_id}/messages`;
+    const url = `${WHATSAPP_API_URL}/${from_phone_number_id}/messages`;
     const t0 = Date.now();
     const resp = await axios.post(url, payload, {
       headers: {
@@ -777,22 +812,62 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
     const latency_ms = Date.now() - t0;
     const json: any = resp.data;
 
-    logger.info({ correlationId, restaurant_id, action: 'send_message', step: 'messages', status: 'success', http_status: resp.status, graph_endpoint: url, latency_ms, details: safe({ to, type }) }, 'Message send result');
+    logger.info({ correlationId, restaurant_id, action: 'send_message', step: 'messages', status: 'success', http_status: resp.status, graph_endpoint: url, latency_ms, from_phone_number_id, details: safe({ to, type }) }, 'Message send result');
 
     const graphMessageId = json?.messages?.[0]?.id || json?.messages?.id || null;
+    const conversation_id_str = `wa_${restaurant_id}_${to}`;
 
-    await supabase.from('whatsapp_messages').insert({
-      restaurant_id,
-      message_id: graphMessageId || crypto.randomUUID(),
-      to_phone: to,
-      from_phone,
-      message_type: type,
-      content: type === 'text' ? { body: message } : message,
-      status: 'sent',
-      direction: 'outbound',
-      conversation_id: `wa_${restaurant_id}_${to}`,
-      metadata: { request_id: correlationId }
-    });
+    // Ensure conversation exists
+    const existingConv = await supabase
+      .from('whatsapp_conversations')
+      .select('id')
+      .eq('conversation_id', conversation_id_str)
+      .maybeSingle();
+    
+    const existingConvData = existingConv?.data;
+    if (!existingConvData?.id) {
+      // Create a new conversation if needed
+      await supabase
+        .from('whatsapp_conversations')
+        .insert({ 
+          restaurant_id, 
+          conversation_id: conversation_id_str, 
+          status: 'open', 
+          last_message_at: new Date().toISOString(),
+          phone_number_id: from_phone_number_id
+        });
+      logger.info({ correlationId, restaurant_id, action: 'send_message', step: 'conversation_created', conversation_id: conversation_id_str }, 'New conversation created for outbound message');
+    } else {
+      // Update last_message_at
+      await supabase
+        .from('whatsapp_conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', existingConvData.id);
+    }
+
+    // Store the message
+    let messageInsert;
+    try {
+      messageInsert = await supabase.from('whatsapp_messages').insert({
+        restaurant_id,
+        message_id: graphMessageId || crypto.randomUUID(),
+        to_phone: to,
+        from_phone: from_phone,
+        message_type: type,
+        content: type === 'text' ? { body: message } : message,
+        status: 'sent',
+        direction: 'outbound',
+        conversation_id: conversation_id_str,
+        phone_number_id: from_phone_number_id,
+        metadata: { request_id: correlationId }
+      }).select('id').single();
+    } catch (error) {
+      logger.error({ correlationId, restaurant_id, action: 'send_message', step: 'message_persist_error', error: (error as any)?.message });
+      messageInsert = { data: null };
+    }
+
+    const message_db_id = messageInsert?.data?.id;
+    logger.info({ correlationId, restaurant_id, action: 'send_message', step: 'message_persisted', message_db_id, conversation_id: conversation_id_str }, 'Outbound message persisted');
 
     res.json({ success: true, data: { message_id: graphMessageId } });
   } catch (error: any) {
@@ -815,34 +890,106 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     .maybeSingle();
 
   if (!data) {
-    return res.json({ success: true, data: { status: 'not_connected' } });
+    logger.info({ action: "status.read", restaurant_id, reason: 'missing_integration_row' }, "No integration found for restaurant, returning not_connected.");
+    return res.json({ success: true, data: { status: 'not_connected', numbers: [] } });
   }
   
   const waba_id = (data.metadata as any)?.waba_id || null;
-  const returned_status = data.connection_status || 'not_connected';
+  let returned_status = data.connection_status || 'not_connected';
+  let numbers: PhoneNumberInfo[] = [];
+  
+  if (returned_status === 'active') {
+    if (waba_id) {
+      try {
+        // Fetch all associated numbers from Graph API
+        const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+        const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
+        numbers = (resp.data?.data || []).map((n) => ({
+          phone_number_id: n.id,
+          display_phone_number: n.display_phone_number,
+          status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
+        }));
+      } catch (error) {
+        logger.error({ restaurant_id, action: "status_numbers", error: (error as any)?.message }, "Error fetching phone numbers");
+      }
+    }
+    // Always include DB number as a fallback if none gathered from Graph
+    if ((!numbers || numbers.length === 0) && data.phone_number_id && data.phone_number) {
+      numbers = [{
+        phone_number_id: data.phone_number_id,
+        display_phone_number: data.phone_number,
+        status: 'active'
+      }];
+    }
+  }
 
-  logger.info({ action: "status", restaurant_id, db_row: data, returned_status }, "WhatsApp status requested.");
+  logger.info({ action: "status.read", restaurant_id, db_row: data, returned_status, numbers_count: numbers.length, waba_id, phone_numbers_from_api: numbers }, "WhatsApp status requested - detailed debug info");
 
   return res.json({
     success: true,
     data: {
       status: returned_status,
+      numbers,
       waba_id,
-      phone_number_id: data.phone_number_id,
-      display_phone_number: data.phone_number,
       restaurant_id: data.restaurant_id
     }
   });
 });
 
+// Get connected numbers
+router.get('/numbers', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const correlationId = getCorrelationId(req);
+  const restaurant_id = req.user?.restaurant_id;
+
+  try {
+    const { data: integData, error: integError } = await supabase
+      .from('whatsapp_business_integrations')
+      .select('metadata')
+      .eq('restaurant_id', restaurant_id)
+      .maybeSingle();
+
+    if (integError || !integData) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const waba_id = (integData.metadata as any)?.waba_id;
+    if (!waba_id) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+    const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
+    
+    const numbers = (resp.data?.data || []).map((n) => ({
+      phone_number_id: n.id,
+      display_phone_number: n.display_phone_number,
+      status: n.quality_rating === 'GREEN' ? 'active' : 'pending', // Simplified status
+    }));
+    
+    res.json({ success: true, data: numbers });
+  } catch (error: any) {
+    logger.error({ correlationId, restaurant_id, action: 'get_numbers', status: 'error', error: error?.message }, 'Get numbers error');
+    res.status(500).json({ success: false, error: 'Erro ao buscar números' });
+  }
+});
+
+
 // Conversations
 router.get('/conversations', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const restaurant_id = req.user?.restaurant_id;
-  const { data, error } = await supabase
+  const { phone_number_id } = req.query as Record<string, string>;
+
+  let query = supabase
     .from('whatsapp_conversations')
     .select('*')
-    .eq('restaurant_id', restaurant_id)
-    .order('last_message_at', { ascending: false });
+    .eq('restaurant_id', restaurant_id);
+
+  if (phone_number_id) {
+    query = query.eq('phone_number_id', phone_number_id);
+  }
+
+  const { data, error } = await query.order('last_message_at', { ascending: false });
+
   if (error) {
     res.status(500).json({ success: false, error: 'Erro ao listar conversas' });
     return;
