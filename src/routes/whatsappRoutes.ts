@@ -966,10 +966,10 @@ router.get('/numbers', authenticate, requireRestaurant, async (req: Authenticate
       status: n.quality_rating === 'GREEN' ? 'active' : 'pending', // Simplified status
     }));
     
-    res.json({ success: true, data: numbers });
+    return res.json({ success: true, data: numbers });
   } catch (error: any) {
     logger.error({ correlationId, restaurant_id, action: 'get_numbers', status: 'error', error: error?.message }, 'Get numbers error');
-    res.status(500).json({ success: false, error: 'Erro ao buscar números' });
+    return res.status(500).json({ success: false, error: 'Erro ao buscar números' });
   }
 });
 
