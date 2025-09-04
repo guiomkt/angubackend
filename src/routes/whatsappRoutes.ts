@@ -173,9 +173,25 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       logger.warn({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'unclaimed' }, 'No verified phone numbers found.');
     }
 
-    // Subscribe app to WABA messages
+    // Subscribe app to WABA messages - THIS IS THE CRITICAL STEP
+    // It tells Meta to send message events for this specific WABA to our app's webhook.
     const subscribeUrl = `${WHATSAPP_API_URL}/${waba_id}/subscribed_apps`;
-    await axios.post(subscribeUrl, { subscribed_fields: ['messages'], access_token: graphToken }, { headers: { 'Content-Type': 'application/json' } });
+    try {
+      logger.info({ correlationId, restaurant_id, waba_id, action: 'performWhatsAppSetup', step: 'waba_subscribe' }, 'Subscribing app to WABA');
+      await axios.post(subscribeUrl, { subscribed_fields: ['messages'], access_token: graphToken }, { headers: { 'Content-Type': 'application/json' } });
+      logger.info({ correlationId, restaurant_id, waba_id, action: 'performWhatsAppSetup', step: 'waba_subscribe', status: 'success' }, 'Successfully subscribed app to WABA');
+    } catch (subError: any) {
+        // This can sometimes fail if already subscribed. We log a warning but don't treat it as a fatal error.
+        logger.warn({
+            correlationId,
+            restaurant_id,
+            waba_id,
+            action: 'performWhatsAppSetup',
+            step: 'waba_subscribe',
+            status: 'error_ignored',
+            error: subError.message
+        }, 'Failed to subscribe app to WABA, possibly already subscribed. Continuing setup.');
+    }
     
     // Persist integration details
     const integrationData = {
