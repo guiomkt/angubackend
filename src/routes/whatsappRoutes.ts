@@ -818,7 +818,7 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
   
   const waba_id = (data.metadata as any)?.waba_id || null;
 
-  res.json({
+  return res.json({
     success: true,
     data: {
       status: data.connection_status || 'not_connected',
