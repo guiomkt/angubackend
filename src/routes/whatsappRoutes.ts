@@ -1080,7 +1080,7 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
   try {
     // To get messages for a contact, we first need the contact's phone number.
     const { data: contact, error: contactError } = await supabase
-      .from('chat_contacts')
+      .from('whatsapp_contacts') // Fix: Was incorrectly pointing to chat_contacts
       .select('phone_number')
       .eq('id', contact_id)
       .single();
