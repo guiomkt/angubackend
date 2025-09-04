@@ -553,7 +553,11 @@ router.post('/webhook', async (req, res) => {
   try {
     const body = req.body as any;
 
+    // Enhanced entry logging
+    logger.info({ correlationId, action: 'webhook.received', body: safe(body) }, 'Webhook payload received');
+
     if (!body?.entry) {
+      logger.warn({ correlationId, action: 'webhook.ignored', reason: 'no_entry_field' }, 'Webhook payload ignored (no .entry)');
       res.status(200).json({ received: true });
       return;
     }
@@ -579,7 +583,10 @@ router.post('/webhook', async (req, res) => {
 
           await writeConnectionLog({ restaurant_id: restaurant_id || undefined, waba_id, action: 'messages', details: { count: value.messages.length } });
 
-          if (!restaurant_id) continue;
+          if (!restaurant_id) {
+            logger.warn({ correlationId, action: 'webhook.ignored', reason: 'no_restaurant_found', waba_id, phone_number_id }, 'Webhook message ignored (restaurant not found)');
+            continue;
+          }
 
           for (const msg of value.messages) {
             const wa_id = (value.contacts && value.contacts[0]?.wa_id) || msg.from;
@@ -635,7 +642,7 @@ router.post('/webhook', async (req, res) => {
                   .single();
                 if (insertError) throw insertError;
                 chat_contact_id = newContact.id;
-                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact_created', contact_id: chat_contact_id }, 'Synced new chat contact');
+                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact.synced.new', contact_id: chat_contact_id }, 'Sync: New chat contact created');
               } else {
                 chat_contact_id = existingChatContact.id;
                 const { error: updateError } = await supabase
@@ -648,6 +655,7 @@ router.post('/webhook', async (req, res) => {
                   })
                   .eq('id', chat_contact_id);
                 if (updateError) throw updateError;
+                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_contact.synced.update', contact_id: chat_contact_id }, 'Sync: Chat contact updated');
               }
 
               if (chat_contact_id) {
@@ -667,12 +675,14 @@ router.post('/webhook', async (req, res) => {
                     status: 'open',
                   });
                   if (insertError) throw insertError;
+                  logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_conv.created' }, 'Sync: New chat conversation created');
                 } else {
                   const { error: updateError } = await supabase.from('chat_conversations').update({
                     updated_at: new Date().toISOString(),
                     status: 'open'
                   }).eq('id', existingChatConv.id);
                   if (updateError) throw updateError;
+                  logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_conv.updated' }, 'Sync: Chat conversation updated');
                 }
 
                 const type = msg.type as string;
@@ -688,9 +698,10 @@ router.post('/webhook', async (req, res) => {
                   is_read: false,
                 });
                 if (messageInsertError) throw messageInsertError;
+                logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'chat_msg.created' }, 'Sync: Chat message created');
               }
             } catch (syncError: any) {
-              logger.error({ correlationId, restaurant_id, action: 'webhook', step: 'chat_sync_error', wa_id, error: syncError.message }, 'Failed to sync with chat tables');
+              logger.error({ correlationId, restaurant_id, action: 'webhook', step: 'chat_sync.fail', wa_id, error: syncError.message }, 'Failed to sync with chat tables');
             }
 
             // Upsert conversation (unique by conversation_id)
@@ -717,7 +728,7 @@ router.post('/webhook', async (req, res) => {
                 .select('id')
                 .single();
               conversation_id = insConv.data?.id;
-              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'conversation_created', conversation_id: conversation_id_str, phone_number_id }, 'New WhatsApp conversation created');
+              logger.info({ correlationId, restaurant_id, action: 'webhook', step: 'wa_conv.created', conversation_id: conversation_id_str, phone_number_id }, 'WA conversation created');
             } else {
               await supabase.from('whatsapp_conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation_id);
             }
@@ -752,12 +763,12 @@ router.post('/webhook', async (req, res) => {
               correlationId, 
               restaurant_id, 
               action: 'webhook', 
-              step: 'message_persisted', 
+              step: 'wa_msg.persisted', 
               message_id: msg.id, 
               conversation_id: conversation_id_str,
               phone_number_id,
               message_db_id: messageInsert.data?.id
-            }, 'WhatsApp message persisted');
+            }, 'WA message persisted');
           }
         } else if (value.statuses && Array.isArray(value.statuses)) {
           for (const status of value.statuses) {
@@ -765,7 +776,7 @@ router.post('/webhook', async (req, res) => {
             const new_status = status.status;
             await supabase.from('whatsapp_messages').update({ status: new_status }).eq('message_id', message_id);
             await writeConnectionLog({ waba_id, action: 'message_status_update', details: { message_id, status: new_status } });
-            logger.info({ correlationId, action: 'webhook', step: 'message_status_updated', message_id, new_status }, 'Message status updated');
+            logger.info({ correlationId, action: 'webhook', step: 'msg_status.updated', message_id, new_status }, 'Message status updated');
           }
         } else if (field === 'message_template_status_update') {
           const t = value?.message_templates || [];
