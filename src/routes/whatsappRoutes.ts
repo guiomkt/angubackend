@@ -131,20 +131,20 @@ router.get('/oauth/callback', async (req, res) => {
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
   const frontendUrl = process.env.FRONTEND_URL || 'https://www.angu.ai';
-  const successRedirectUrl = `${frontendUrl}/whatsapp-oauth-success`;
+  // Add a status parameter to the URL for the main window to detect success
+  const successRedirectUrl = `${frontendUrl}/whatsapp-oauth-success?status=success`;
+  const failureRedirectUrl = `${frontendUrl}/whatsapp-oauth-success?status=failure`;
   
   try {
     if (!code || !state) {
       logger.error({ correlationId, action: 'oauth_callback.error', reason: 'missing_params' }, 'Missing code or state parameters');
-      res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
-      return;
+      return res.redirect(failureRedirectUrl);
     }
 
     const parsed = verifyState(state);
     if (!parsed?.restaurant_id || !parsed.nonce) {
       logger.error({ correlationId, action: 'oauth_callback.error', reason: 'invalid_state' }, 'Invalid state parameter');
-      res.status(400).json({ success: false, error: 'State inválido' });
-      return;
+      return res.redirect(failureRedirectUrl);
     }
 
     const { restaurant_id, nonce } = parsed as { restaurant_id: string, nonce: string };
@@ -218,7 +218,7 @@ router.get('/oauth/callback', async (req, res) => {
 
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: true });
 
-    // Send response to close the popup and notify the opener
+    // Redirect to the frontend, which will handle the window closing.
     logger.info({ correlationId, action: 'oauth_callback.redirecting', restaurant_id, url: successRedirectUrl }, 'Redirecting to frontend callback page');
     res.redirect(successRedirectUrl);
 
@@ -226,7 +226,7 @@ router.get('/oauth/callback', async (req, res) => {
     const restaurant_id = (req.query && typeof req.query.state === 'string' && verifyState(req.query.state)?.restaurant_id) || undefined;
     logger.error({ correlationId, restaurant_id, action: 'oauth_callback.error', step: 'exception', error: error?.message }, 'OAuth callback error');
     await writeIntegrationLog({ restaurant_id, step: 'oauth_callback', success: false, error_message: error?.message });
-    res.status(500).json({ success: false, error: 'Erro no callback OAuth' });
+    res.redirect(failureRedirectUrl);
   }
 });
 
