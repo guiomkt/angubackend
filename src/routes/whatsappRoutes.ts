@@ -357,10 +357,12 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
     const webhook_url = `${API_BASE_URL}/api/whatsapp/webhook`;
     try {
       const appId = FACEBOOK_APP_ID;
+      const appSecret = FACEBOOK_APP_SECRET;
+      const appAccessToken = `${appId}|${appSecret}`;
       const url = `${WHATSAPP_API_URL}/${appId}/subscriptions`;
       const subscribed_fields = ["messages", "message_template_status_update", "account_update"];
       
-      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'pending', graph_endpoint: url, appId }, 'Configuring app webhook');
+      logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'pending', graph_endpoint: url, appId }, 'Configuring app webhook with App Access Token');
       
       await axios.post(url, {
         object: 'whatsapp_business_account',
@@ -368,7 +370,7 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
         verify_token: WEBHOOK_VERIFY_TOKEN,
         fields: subscribed_fields.join(','),
         include_values: true,
-        access_token: graphToken
+        access_token: appAccessToken
       }, { headers: { 'Content-Type': 'application/json' } });
 
       logger.info({ correlationId, restaurant_id, action: 'setup', step: 'webhook_config', status: 'success' }, 'Webhook configured successfully');
