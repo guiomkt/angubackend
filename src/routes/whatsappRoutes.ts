@@ -142,6 +142,10 @@ router.get('/oauth/callback', async (req, res) => {
           }, i * 100);
         }
         sent = true;
+        // LocalStorage fallback for main window polling
+        try {
+          window.localStorage.setItem('whatsapp_oauth_success', Date.now().toString());
+        } catch (e) {}
         setTimeout(() => window.close(), 600);
       } else {
         document.write("✅ WhatsApp connected, you can close this window.");
