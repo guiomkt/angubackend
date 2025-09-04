@@ -878,10 +878,18 @@ router.post('/send', authenticate, requireRestaurant, async (req: AuthenticatedR
 
 // Status endpoint
 router.get('/status', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
+  const authHeader = req.headers['authorization'] || '';
+  const tokenFingerprint = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+    ? `${authHeader.slice(7, 12)}...`
+    : 'none';
   const restaurant_id = req.user?.restaurant_id;
+
   if (!restaurant_id) {
-    return res.status(401).json({ success: false, error: 'Unauthorized' });
+    logger.warn({ action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id: null }, 'Unauthorized status request - missing restaurant_id');
+    return res.status(401).json({ success: false, error: 'Unauthorized: missing restaurant context' });
   }
+
+  logger.info({ action: 'status.read', token_present: !!authHeader, token_fingerprint: tokenFingerprint, restaurant_id }, 'Status request auth context');
 
   const { data } = await supabase
     .from('whatsapp_business_integrations')
