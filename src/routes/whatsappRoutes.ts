@@ -253,6 +253,13 @@ router.post('/setup', authenticate, requireRestaurant, async (req: Authenticated
       return;
     }
 
+    // [VALIDATION] Ensure BSP_BUSINESS_ID is not misconfigured as the App ID.
+    if (BSP_CONFIG.BSP_BUSINESS_ID === FACEBOOK_APP_ID) {
+      logger.error({ correlationId, restaurant_id, action: 'setup', step: 'init', status: 'error', error: 'BSP_BUSINESS_ID is misconfigured as FACEBOOK_APP_ID.' });
+      res.status(400).json({ status: "error", message: "BSP_BUSINESS_ID misconfigured" });
+      return;
+    }
+
     const resolved_business_id: string | null = client_business_id || oauthToken?.business_id || null;
     // The business_id from OAuth is for identifying the client, but for WABA discovery, we must use our BSP Business ID.
     const discovery_business_id = BSP_CONFIG.BSP_BUSINESS_ID;
