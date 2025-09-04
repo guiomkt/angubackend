@@ -607,8 +607,9 @@ router.post('/webhook', async (req, res) => {
                   contact_id, 
                   conversation_id: conversation_id_str, 
                   status: 'open', 
-                  last_message_at: new Date().toISOString(), 
-                  phone_number_id: metadata.phone_number_id
+                  last_message_at: new Date().toISOString()
+                  // The phone_number_id column does not exist in the schema, so we remove it.
+                  // phone_number_id: metadata.phone_number_id
                 })
                 .select('id')
                 .single();
@@ -639,7 +640,8 @@ router.post('/webhook', async (req, res) => {
               status: 'delivered',
               direction: 'inbound',
               conversation_id: conversation_id_str,
-              phone_number_id,
+              // The phone_number_id column does not exist in the schema, so we remove it.
+              // phone_number_id,
               metadata: { timestamp: msg.timestamp }
             }).select('id').single();
             
@@ -994,39 +996,22 @@ router.get('/messages', authenticate, requireRestaurant, async (req: Authenticat
 router.get('/contacts', authenticate, requireRestaurant, async (req: AuthenticatedRequest, res) => {
   const correlationId = getCorrelationId(req);
   const restaurant_id = req.user?.restaurant_id;
-  const { phone_number_id } = req.query as { phone_number_id?: string };
+  // We can no longer filter by phone_number_id as the column does not exist in the target table.
+  // const { phone_number_id } = req.query as { phone_number_id?: string };
 
-  if (!restaurant_id || !phone_number_id) {
+  if (!restaurant_id) {
     return res.status(400).json({ success: false, error: 'Parâmetros inválidos' });
   }
 
-  logger.info({ correlationId, restaurant_id, phone_number_id, action: 'get_contacts.start' }, 'Fetching contacts');
+  logger.info({ correlationId, restaurant_id, action: 'get_contacts.start' }, 'Fetching all contacts for restaurant');
 
   try {
-    // Two-step query to prevent join issues.
-    // 1. Get contact IDs from conversations matching the selected phone number.
-    const { data: conversations, error: convError } = await supabase
-      .from('whatsapp_conversations')
-      .select('contact_id')
-      .eq('restaurant_id', restaurant_id)
-      .eq('phone_number_id', phone_number_id)
-      .not('contact_id', 'is', null);
-
-    if (convError) {
-      logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: convError.message }, 'Error fetching conversations for contacts');
-      return res.status(500).json({ success: false, error: 'Erro ao buscar conversas' });
-    }
-
-    const contactIds = conversations.map(c => c.contact_id);
-    if (contactIds.length === 0) {
-      return res.json({ success: true, data: [] });
-    }
-
-    // 2. Fetch the actual contacts using the retrieved IDs.
+    // Fetch all contacts for the given restaurant, as we can no longer filter by number.
     const { data: contacts, error: contactsError } = await supabase
       .from('whatsapp_contacts')
       .select('*')
-      .in('id', contactIds);
+      .eq('restaurant_id', restaurant_id)
+      .order('last_message_at', { ascending: false, nullsFirst: false });
 
     if (contactsError) {
       logger.error({ correlationId, restaurant_id, action: 'get_contacts.db_error', error: contactsError.message }, 'Error fetching contacts by ID');
