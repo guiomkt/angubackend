@@ -156,14 +156,17 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
     // Discover Phone Numbers
     const phoneUrl = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
     const phoneResp = await axios.get<GraphPhoneResponse>(phoneUrl, { params: { access_token: graphToken } });
+    
+    // Find ALL verified numbers, not just the first one.
     const allVerifiedNumbers = (phoneResp.data?.data || []).filter((p: any) => p.verified_name);
-    const firstNumber = allVerifiedNumbers.length > 0 ? allVerifiedNumbers[0] : null;
 
-    if (firstNumber) {
-      resolved_phone_number_id = firstNumber.id;
-      resolved_display_phone_number = firstNumber.display_phone_number;
+    if (allVerifiedNumbers.length > 0) {
+      // Use the first number for the main columns for compatibility
+      const primaryNumber = allVerifiedNumbers[0];
+      resolved_phone_number_id = primaryNumber.id;
+      resolved_display_phone_number = primaryNumber.display_phone_number;
       connection_status = 'active';
-      logger.info({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'success', count: allVerifiedNumbers.length }, `Found ${allVerifiedNumbers.length} verified phone number(s)`);
+      logger.info({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'success', found_numbers: allVerifiedNumbers.length }, 'Found verified phone numbers');
     } else {
       connection_status = 'unclaimed'; // No verified number, user must claim one manually.
       logger.warn({ correlationId, restaurant_id, action: 'performWhatsAppSetup', step: 'phone_discovery', status: 'unclaimed' }, 'No verified phone numbers found.');
@@ -185,11 +188,11 @@ async function performWhatsAppSetup(restaurant_id: string, correlationId: string
       token_expires_at: oauthToken.expires_at,
       metadata: { 
         waba_id,
-        // Cache all discovered phone numbers for the status endpoint to use
+        // Cache the full list of numbers found, matching the format used by the /status endpoint
         phone_numbers_cache: allVerifiedNumbers.map(n => ({
-          phone_number_id: n.id,
-          display_phone_number: n.display_phone_number,
-          status: 'active'
+            phone_number_id: n.id,
+            display_phone_number: n.display_phone_number,
+            status: n.quality_rating === 'GREEN' ? 'active' : 'pending'
         }))
       }
     };
@@ -277,7 +280,7 @@ router.get('/oauth/callback', async (req, res) => {
   logger.info({ correlationId, action: 'oauth_callback.start', code_present: !!code, state_present: !!state }, 'OAuth callback started');
 
   const closePopupScript = `<!DOCTYPE html><html><head><script>window.close();</script></head><body><p>Conectado. Pode fechar esta janela.</p></body></html>`;
-  
+
   try {
     if (!code || !state) {
       logger.error({ correlationId, action: 'oauth_callback.error', reason: 'missing_params' }, 'Missing code or state parameters');
@@ -300,7 +303,7 @@ router.get('/oauth/callback', async (req, res) => {
       .eq('restaurant_id', restaurant_id)
       .eq('metadata->>nonce', nonce)
       .maybeSingle();
-    
+
     if (nonceError || existingToken) {
       logger.warn({ correlationId, restaurant_id, nonce, action: 'oauth_callback', step: 'nonce_check', status: 'duplicate' }, 'duplicate_oauth_callback');
       // No setup is needed here, just close the popup.
@@ -826,16 +829,16 @@ router.get('/status', authenticate, requireRestaurant, async (req: Authenticated
     
     if (returned_status === 'active' && waba_id) {
       try {
-        const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
-        logger.info({ correlationId, action: "status.fetch_numbers", restaurant_id, waba_id, graph_endpoint: url }, "Fetching phone numbers from Graph API");
-        
-        const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
-        numbers = (resp.data?.data || []).map((n) => ({
-          phone_number_id: n.id,
-          display_phone_number: n.display_phone_number,
-          status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
-        }));
-        
+          const url = `${WHATSAPP_API_URL}/${waba_id}/phone_numbers`;
+          logger.info({ correlationId, action: "status.fetch_numbers", restaurant_id, waba_id, graph_endpoint: url }, "Fetching phone numbers from Graph API");
+          
+          const resp = await axios.get<GraphPhoneResponse>(url, { params: { access_token: BSP_CONFIG.PERMANENT_TOKEN } });
+          numbers = (resp.data?.data || []).map((n) => ({
+            phone_number_id: n.id,
+            display_phone_number: n.display_phone_number,
+            status: n.quality_rating === 'GREEN' ? 'active' : 'pending',
+          }));
+          
         logger.info({ correlationId, action: "status.fetch_numbers.success", restaurant_id, numbers_count: numbers.length }, "Successfully fetched phone numbers from Graph API");
 
         // Asynchronously update cache in DB if new numbers are found
